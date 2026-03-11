@@ -1,0 +1,68 @@
+{
+  "version": "0.1",
+  "households": [
+    {
+      "id": "hh-001",
+      "name": "Pleasant Family",
+      "funds": 25000,
+      "members": ["sim-001", "sim-002"]
+    }
+  ],
+  "sims": [
+    {
+      "id": "sim-001",
+      "name": "Mary Pleasant",
+      "age_stage": "adult",
+      "aspiration": "family",
+      "household_id": "hh-001",
+      "career": "Education",
+      "career_level": 4,
+      "needs": {
+        "hunger": 80,
+        "energy": 70,
+        "social": 60,
+        "comfort": 75,
+        "hygiene": 65,
+        "bladder": 85,
+        "fun": 55
+      },
+      "skills": {
+        "cooking": 6,
+        "logic": 5,
+        "charisma": 4
+      }
+    },
+    {
+      "id": "sim-002",
+      "name": "Daniel Pleasant",
+      "age_stage": "adult",
+      "aspiration": "romance",
+      "household_id": "hh-001",
+      "career": "Athletics",
+      "career_level": 5,
+      "needs": {
+        "hunger": 75,
+        "energy": 55,
+        "social": 50,
+        "comfort": 60,
+        "hygiene": 70,
+        "bladder": 80,
+        "fun": 65
+      },
+      "skills": {
+        "body": 7,
+        "charisma": 5,
+        "creativity": 3
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "sim_a": "sim-001",
+      "sim_b": "sim-002",
+      "score_daily": 40,
+      "score_lifetime": 25,
+      "flags": ["married"]
+    }
+  ]
+}
