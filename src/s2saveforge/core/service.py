@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Callable
 
 from s2saveforge.core.models import SaveGame
-from s2saveforge.core.parser import SaveParser
+from s2saveforge.core.parser import ReadOnlySaveFormatError, SaveParser
 from s2saveforge.core.validators import ValidationIssue, validate_savegame
 
 
@@ -41,6 +41,10 @@ class SaveSession:
     def create_backup(self, backup_root: Path | None = None) -> Path:
         if self._source_path is None:
             raise RuntimeError("No loaded savegame to backup.")
+        if self._source_path.is_dir():
+            raise ReadOnlySaveFormatError(
+                "Filesystem previews loaded from Sims 2 folders cannot be backed up from the editor yet."
+            )
 
         root = backup_root or self._source_path.parent / "backups"
         root.mkdir(parents=True, exist_ok=True)
@@ -91,6 +95,10 @@ class SaveSession:
         target = path or self._source_path
         if target is None:
             raise RuntimeError("No target path provided.")
+        if target.is_dir():
+            raise ReadOnlySaveFormatError(
+                "Filesystem previews loaded from Sims 2 folders are currently read-only."
+            )
 
         temp_path = target.with_name(f"{target.stem}.tmp{target.suffix}")
         self._parser.write(temp_path, self._current)

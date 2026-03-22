@@ -1,7 +1,10 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from s2saveforge.core.service import SaveSession
+from s2saveforge.core.parser import ReadOnlySaveFormatError
 
 
 SAMPLE = {
@@ -60,3 +63,32 @@ def test_session_backup_undo_redo_save(tmp_path: Path) -> None:
 
     payload = json.loads(target.read_text(encoding="utf-8"))
     assert payload["households"][0]["funds"] == 9999
+
+
+def test_session_loads_sims2_folder_preview_and_blocks_save(tmp_path: Path) -> None:
+    root = tmp_path / "The Sims 2"
+    neighborhood = root / "Neighborhoods" / "N001"
+    characters = neighborhood / "Characters"
+    lots = neighborhood / "Lots"
+    characters.mkdir(parents=True)
+    lots.mkdir(parents=True)
+
+    (neighborhood / "N001_Neighborhood.package").write_bytes(b"pkg")
+    (characters / "N001_User00000.package").write_bytes(b"sim-a")
+    (characters / "N001_User00001.package").write_bytes(b"sim-b")
+    (lots / "N001_Lot1.package").write_bytes(b"lot")
+
+    session = SaveSession()
+    savegame = session.load(root)
+
+    assert savegame.version.startswith("fs-preview:")
+    assert len(savegame.households) == 1
+    assert savegame.households[0].id == "N001"
+    assert savegame.households[0].members == ["N001_User00000", "N001_User00001"]
+    assert len(savegame.sims) == 2
+
+    with pytest.raises(ReadOnlySaveFormatError):
+        session.create_backup()
+
+    with pytest.raises(ReadOnlySaveFormatError):
+        session.save()
