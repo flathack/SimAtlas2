@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from string import Template
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSignalBlocker, Qt
 from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import (
     QApplication,
@@ -411,6 +411,17 @@ class MainWindow(QMainWindow):
 
         right_panel.addTab(resources_page, "Resources")
 
+        file_inventory_page = QWidget(right_panel)
+        file_inventory_layout = QVBoxLayout(file_inventory_page)
+        file_inventory_layout.setContentsMargins(12, 12, 12, 12)
+        file_inventory_layout.setSpacing(10)
+
+        self.file_inventory_view = QTextEdit(file_inventory_page)
+        self.file_inventory_view.setReadOnly(True)
+        file_inventory_layout.addWidget(self.file_inventory_view, 1)
+
+        right_panel.addTab(file_inventory_page, "Files")
+
         splitter.setSizes([320, 960])
 
     def _apply_window_style(self) -> None:
@@ -552,7 +563,7 @@ class MainWindow(QMainWindow):
     ) -> None:
         if current is None:
             self._current_household_filter_id = ""
-            self._refresh_sim_list()
+            self._refresh_scope_views()
             return
 
         household_id = current.data(Qt.UserRole)
@@ -560,11 +571,11 @@ class MainWindow(QMainWindow):
             return
 
         self._current_household_filter_id = household_id
-        self._set_household_combo_by_id(household_id)
-        self._refresh_sim_list()
-        self._refresh_overview()
-        self._refresh_package_source_options()
-        self._refresh_package_inspector()
+        household = self._find_household_by_id(household_id)
+        if household is not None:
+            self.funds_spin.setValue(household.funds)
+        self._set_household_combo_by_id(household_id, emit_signal=False)
+        self._refresh_scope_views()
 
     def _on_household_selected(self, index: int) -> None:
         savegame = self.session.current
@@ -574,11 +585,8 @@ class MainWindow(QMainWindow):
         household = savegame.households[index]
         self.funds_spin.setValue(household.funds)
         self._current_household_filter_id = household.id
-        self._select_household_list_item(household.id)
-        self._refresh_sim_list()
-        self._refresh_overview()
-        self._refresh_package_source_options()
-        self._refresh_package_inspector()
+        self._select_household_list_item(household.id, emit_signal=False)
+        self._refresh_scope_views()
 
     def _on_sim_selected(self, current: QListWidgetItem | None, _previous: QListWidgetItem | None) -> None:
         if current is None:
@@ -607,10 +615,13 @@ class MainWindow(QMainWindow):
         self.sim_career_level.setValue(sim.career_level)
         self._fill_table(self.needs_table, sim.needs)
         self._fill_table(self.skills_table, sim.skills)
-        self._set_household_combo_by_id(sim.household_id)
-        self._refresh_overview()
-        self._refresh_package_source_options()
-        self._refresh_package_inspector()
+        self._current_household_filter_id = sim.household_id
+        household = self._find_household_by_id(sim.household_id)
+        if household is not None:
+            self.funds_spin.setValue(household.funds)
+        self._set_household_combo_by_id(sim.household_id, emit_signal=False)
+        self._select_household_list_item(sim.household_id, emit_signal=False)
+        self._refresh_detail_views()
 
     def _fill_table(self, table: QTableWidget, data: dict[str, int]) -> None:
         table.setRowCount(len(data))
@@ -709,6 +720,7 @@ class MainWindow(QMainWindow):
             self._refresh_package_inspector()
             self._refresh_resource_type_options()
             self._refresh_resource_browser()
+            self._refresh_file_inventory_view()
             self.household_list.blockSignals(False)
             self.household_select.blockSignals(False)
             self.sim_list.blockSignals(False)
@@ -738,6 +750,7 @@ class MainWindow(QMainWindow):
         self._refresh_package_inspector()
         self._refresh_resource_type_options()
         self._refresh_resource_browser()
+        self._refresh_file_inventory_view()
 
         self.household_list.blockSignals(False)
         self.household_select.blockSignals(False)
@@ -770,11 +783,25 @@ class MainWindow(QMainWindow):
             f"Health: {summary['error']} errors | {summary['warning']} warnings | {summary['info']} info"
         )
 
+    def _refresh_scope_views(self) -> None:
+        self._refresh_sim_list()
+        self._refresh_detail_views()
+
+    def _refresh_detail_views(self) -> None:
+        self._refresh_overview()
+        self._refresh_package_source_options()
+        self._refresh_package_inspector()
+        self._refresh_resource_type_options()
+        self._refresh_resource_browser()
+        self._refresh_file_inventory_view()
+
     def _refresh_sim_list(self, *, select_current: bool = True) -> None:
         savegame = self.session.current
+        blocker = QSignalBlocker(self.sim_list)
         self.sim_list.clear()
 
         if savegame is None:
+            del blocker
             return
 
         search_term = self.sim_search.text().strip().lower()
@@ -798,17 +825,22 @@ class MainWindow(QMainWindow):
         if not filtered_sims:
             self._current_sim_id = ""
             self._clear_sim_editor()
+            del blocker
             self._refresh_overview()
             return
 
         target_id = self._current_sim_id if select_current else filtered_sims[0].id
+        target_row = 0
         for row in range(self.sim_list.count()):
             item = self.sim_list.item(row)
             if item.data(Qt.UserRole) == target_id:
-                self.sim_list.setCurrentRow(row)
-                return
+                target_row = row
+                break
 
-        self.sim_list.setCurrentRow(0)
+        self.sim_list.setCurrentRow(target_row)
+        current_item = self.sim_list.currentItem()
+        del blocker
+        self._on_sim_selected(current_item, None)
 
     def _refresh_overview(self) -> None:
         savegame = self.session.current
@@ -883,6 +915,7 @@ class MainWindow(QMainWindow):
                         f"Character packages: {household.metadata.get('character_count', len(household.members))}",
                         f"Lot packages: {household.metadata.get('lot_count', 0)}",
                         f"Suburbs: {household.metadata.get('suburb_count', 0)}",
+                        f"Thumbnail packages: {household.metadata.get('thumbnail_package_count', 0)}",
                         f"Story entries: {household.metadata.get('story_entry_count', 0)}",
                         "",
                     ]
@@ -1043,6 +1076,8 @@ class MainWindow(QMainWindow):
                 self.package_source_select.addItem(f"{household.id} main package", main_path)
             for suburb_path in household.metadata.get("suburb_package_paths", []):
                 self.package_source_select.addItem(Path(suburb_path).name, suburb_path)
+            for thumbnail_path in household.metadata.get("thumbnail_package_paths", []):
+                self.package_source_select.addItem(Path(thumbnail_path).name, thumbnail_path)
 
         selected_sim = next((sim for sim in savegame.sims if sim.id == self._current_sim_id), None)
         if selected_sim is not None and selected_sim.metadata.get("package_path"):
@@ -1075,6 +1110,12 @@ class MainWindow(QMainWindow):
         for household in savegame.households:
             if household.metadata.get("main_package_path") == path_text:
                 return household.metadata.get("main_package_info")
+            for package_info in household.metadata.get("suburb_package_infos", []):
+                if isinstance(package_info, dict) and package_info.get("path") == path_text:
+                    return package_info
+            for package_info in household.metadata.get("thumbnail_package_infos", []):
+                if isinstance(package_info, dict) and package_info.get("path") == path_text:
+                    return package_info
 
         for sim in savegame.sims:
             if sim.metadata.get("package_path") == path_text:
@@ -1277,6 +1318,70 @@ class MainWindow(QMainWindow):
         ]
         self.resource_detail_view.setPlainText("\n".join(lines))
 
+    def _refresh_file_inventory_view(self) -> None:
+        savegame = self.session.current
+        if savegame is None:
+            self.file_inventory_view.setPlainText(
+                "No save loaded yet.\n\nLoad a Sims 2 folder to inspect the neighborhood file inventory."
+            )
+            return
+
+        household = self._current_household()
+        if household is None:
+            self.file_inventory_view.setPlainText("No neighborhood selected.")
+            return
+
+        inventory = household.metadata.get("file_inventory", {})
+        if not isinstance(inventory, dict) or not inventory:
+            self.file_inventory_view.setPlainText(
+                "No file inventory is available for the selected neighborhood."
+            )
+            return
+
+        lines = [
+            "Neighborhood File Inventory",
+            "",
+            f"Neighborhood: {household.id}",
+            f"Directory: {household.metadata.get('directory_path', '-')}",
+            f"Total files: {inventory.get('total_file_count', 0)}",
+            f"Total size: {inventory.get('total_size', 0)} bytes",
+        ]
+
+        role_profile = inventory.get("role_profile", [])
+        if isinstance(role_profile, list) and role_profile:
+            lines.extend(["", "File roles"])
+            for entry in role_profile[:10]:
+                lines.append(
+                    f"{entry.get('role', 'Unknown')} x {entry.get('count', 0)} | "
+                    f"{entry.get('total_size', 0)} bytes"
+                )
+
+        extension_profile = inventory.get("extension_profile", [])
+        if isinstance(extension_profile, list) and extension_profile:
+            lines.extend(["", "Extensions"])
+            for entry in extension_profile[:10]:
+                lines.append(
+                    f"{entry.get('extension', '<none>')} x {entry.get('count', 0)} | "
+                    f"{entry.get('total_size', 0)} bytes"
+                )
+
+        noteworthy_files = inventory.get("noteworthy_files", [])
+        if isinstance(noteworthy_files, list) and noteworthy_files:
+            lines.extend(["", "Noteworthy files"])
+            for entry in noteworthy_files[:12]:
+                lines.append(
+                    f"{entry.get('role', 'Unknown')}: {entry.get('relative_path', '-')} | "
+                    f"{entry.get('size', 0)} bytes"
+                )
+
+        global_roles = savegame.metadata.get("neighborhood_file_role_profile", [])
+        if isinstance(global_roles, list) and global_roles:
+            lines.extend(["", "Whole save overview"])
+            for entry in global_roles[:8]:
+                lines.append(f"{entry.get('role', 'Unknown')} x {entry.get('count', 0)}")
+
+        self.file_inventory_view.setPlainText("\n".join(lines))
+
     def _clear_sim_editor(self) -> None:
         self.sim_name.clear()
         self.sim_age.setCurrentText("unknown")
@@ -1298,18 +1403,30 @@ class MainWindow(QMainWindow):
         self.skills_table.setEnabled(enabled)
         self.apply_sim_button.setEnabled(enabled)
 
-    def _set_household_combo_by_id(self, household_id: str) -> None:
+    def _find_household_by_id(self, household_id: str):
+        savegame = self.session.current
+        if savegame is None:
+            return None
+        return next((household for household in savegame.households if household.id == household_id), None)
+
+    def _set_household_combo_by_id(self, household_id: str, *, emit_signal: bool = True) -> None:
+        blocker = QSignalBlocker(self.household_select) if not emit_signal else None
         for index in range(self.household_select.count()):
             if self.household_select.itemData(index) == household_id:
                 self.household_select.setCurrentIndex(index)
+                del blocker
                 return
+        del blocker
 
-    def _select_household_list_item(self, household_id: str) -> None:
+    def _select_household_list_item(self, household_id: str, *, emit_signal: bool = True) -> None:
+        blocker = QSignalBlocker(self.household_list) if not emit_signal else None
         for row in range(self.household_list.count()):
             item = self.household_list.item(row)
             if item.data(Qt.UserRole) == household_id:
                 self.household_list.setCurrentRow(row)
+                del blocker
                 return
+        del blocker
 
     def apply_household_changes(self) -> None:
         savegame = self.session.current

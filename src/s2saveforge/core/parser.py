@@ -9,6 +9,9 @@ from collections import Counter
 from s2saveforge.core.models import Household, SaveGame, Sim
 
 
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".bmp"}
+
+
 class UnsupportedSaveFormatError(RuntimeError):
     pass
 
@@ -106,6 +109,10 @@ class SaveParser:
         sims: list[Sim] = []
         total_story_entries = 0
         package_role_counts: Counter[str] = Counter()
+        neighborhood_file_role_counts: Counter[str] = Counter()
+        neighborhood_file_extension_counts: Counter[str] = Counter()
+        total_neighborhood_file_count = 0
+        total_neighborhood_file_size = 0
 
         for neighborhood_dir in neighborhood_dirs:
             characters_dir = neighborhood_dir / "Characters"
@@ -118,9 +125,21 @@ class SaveParser:
             lot_count = len(lot_files)
             character_files = sorted(characters_dir.glob("*.package"))
             suburb_packages = sorted(neighborhood_dir.glob(f"{neighborhood_dir.name}_Suburb*.package"))
+            thumbnail_packages = sorted(thumbnails_dir.glob("*.package"))
             story_entries = sorted(storytelling_dir.glob("webentry_*.xml"))
             total_story_entries += len(story_entries)
             main_package_info = self._inspect_dbpf_package(main_package_path)
+            suburb_package_infos = [self._inspect_dbpf_package(package) for package in suburb_packages]
+            thumbnail_package_infos = [self._inspect_dbpf_package(package) for package in thumbnail_packages]
+            file_inventory = self._scan_neighborhood_file_inventory(neighborhood_dir)
+            neighborhood_file_role_counts.update(
+                {entry["role"]: entry["count"] for entry in file_inventory["role_profile"]}
+            )
+            neighborhood_file_extension_counts.update(
+                {entry["extension"]: entry["count"] for entry in file_inventory["extension_profile"]}
+            )
+            total_neighborhood_file_count += int(file_inventory["total_file_count"])
+            total_neighborhood_file_size += int(file_inventory["total_size"])
             package_role_counts.update([str(main_package_info.get("package_role", "Unknown"))])
 
             members: list[str] = []
@@ -170,18 +189,24 @@ class SaveParser:
                         "character_count": len(character_files),
                         "lot_count": lot_count,
                         "suburb_count": len(suburb_packages),
+                        "thumbnail_package_count": len(thumbnail_packages),
                         "story_entry_count": len(story_entries),
                         "top_level_package_count": package_count,
                         "character_package_total_size": sum(path.stat().st_size for path in character_files),
                         "lot_package_total_size": sum(path.stat().st_size for path in lot_files),
                         "main_package_info": main_package_info,
                         "suburb_package_paths": [str(package) for package in suburb_packages],
-                        "suburb_package_infos": [self._inspect_dbpf_package(package) for package in suburb_packages],
+                        "suburb_package_infos": suburb_package_infos,
+                        "thumbnail_package_paths": [str(package) for package in thumbnail_packages],
+                        "thumbnail_package_infos": thumbnail_package_infos,
+                        "file_inventory": file_inventory,
                     },
                 )
             )
-            for suburb_package in suburb_packages:
-                package_role_counts.update([str(self._inspect_dbpf_package(suburb_package).get("package_role", "Unknown"))])
+            for suburb_package_info in suburb_package_infos:
+                package_role_counts.update([str(suburb_package_info.get("package_role", "Unknown"))])
+            for thumbnail_package_info in thumbnail_package_infos:
+                package_role_counts.update([str(thumbnail_package_info.get("package_role", "Unknown"))])
             for lot_package in lot_files:
                 package_role_counts.update([str(self._inspect_dbpf_package(lot_package).get("package_role", "Unknown"))])
 
@@ -201,6 +226,16 @@ class SaveParser:
                 "neighborhood_manager_path": str(neighborhood_manager_path),
                 "neighborhood_manager_info": neighborhood_manager_info,
                 "total_story_entries": total_story_entries,
+                "neighborhood_file_count": total_neighborhood_file_count,
+                "neighborhood_file_total_size": total_neighborhood_file_size,
+                "neighborhood_file_role_profile": [
+                    {"role": role, "count": count}
+                    for role, count in neighborhood_file_role_counts.most_common()
+                ],
+                "neighborhood_file_extension_profile": [
+                    {"extension": extension, "count": count}
+                    for extension, count in neighborhood_file_extension_counts.most_common()
+                ],
                 "package_role_profile": [
                     {"role": role, "count": count}
                     for role, count in package_role_counts.most_common()
@@ -222,6 +257,87 @@ class SaveParser:
         raise UnsupportedSaveFormatError(
             "Select either 'The Sims 2', its 'Neighborhoods' folder, or a neighborhood folder like 'N001'."
         )
+
+    def _scan_neighborhood_file_inventory(self, neighborhood_dir: Path) -> dict[str, object]:
+        files = sorted(path for path in neighborhood_dir.rglob("*") if path.is_file())
+        extension_counts: Counter[str] = Counter()
+        extension_sizes: Counter[str] = Counter()
+        role_counts: Counter[str] = Counter()
+        role_sizes: Counter[str] = Counter()
+        noteworthy_files: list[dict[str, object]] = []
+        total_size = 0
+
+        for file_path in files:
+            size = file_path.stat().st_size
+            total_size += size
+            extension = file_path.suffix.lower() or "<none>"
+            role = self._classify_neighborhood_file_role(neighborhood_dir, file_path)
+
+            extension_counts.update([extension])
+            extension_sizes[extension] += size
+            role_counts.update([role])
+            role_sizes[role] += size
+
+            if len(noteworthy_files) < 20 and role not in {"Character Package", "Storytelling Image"}:
+                noteworthy_files.append(
+                    {
+                        "relative_path": str(file_path.relative_to(neighborhood_dir)),
+                        "role": role,
+                        "extension": extension,
+                        "size": size,
+                    }
+                )
+
+        return {
+            "total_file_count": len(files),
+            "total_size": total_size,
+            "extension_profile": [
+                {"extension": extension, "count": count, "total_size": extension_sizes[extension]}
+                for extension, count in extension_counts.most_common()
+            ],
+            "role_profile": [
+                {"role": role, "count": count, "total_size": role_sizes[role]}
+                for role, count in role_counts.most_common()
+            ],
+            "noteworthy_files": noteworthy_files,
+        }
+
+    def _classify_neighborhood_file_role(self, neighborhood_dir: Path, file_path: Path) -> str:
+        relative = file_path.relative_to(neighborhood_dir)
+        relative_parts = [part.lower() for part in relative.parts]
+        name = file_path.name
+        lower_name = name.lower()
+        suffix = file_path.suffix.lower()
+
+        if relative_parts and relative_parts[0] == "characters" and suffix == ".package":
+            return "Character Package"
+        if relative_parts and relative_parts[0] == "lots" and suffix == ".package":
+            return "Lot Package"
+        if relative_parts and relative_parts[0] == "thumbnails" and suffix == ".package":
+            return "Thumbnail Package"
+        if relative_parts and relative_parts[0] == "storytelling" and suffix == ".xml":
+            return "Storytelling Entry"
+        if relative_parts and relative_parts[0] == "storytelling" and suffix in IMAGE_SUFFIXES:
+            return "Storytelling Image"
+        if lower_name == f"{neighborhood_dir.name.lower()}_neighborhood.package":
+            return "Neighborhood Main Package"
+        if lower_name.startswith(f"{neighborhood_dir.name.lower()}_suburb") and suffix == ".package":
+            return "Suburb Package"
+        if lower_name == f"{neighborhood_dir.name.lower()}_neighborhood.png":
+            return "Neighborhood Preview Image"
+        if lower_name.startswith(f"{neighborhood_dir.name.lower()}_suburb") and suffix == ".png":
+            return "Suburb Preview Image"
+        if suffix == ".reia":
+            return "Neighborhood Metadata"
+        if suffix == ".dat":
+            return "Raw Data"
+        if suffix == ".xml":
+            return "XML Data"
+        if suffix == ".package":
+            return "Other Package"
+        if suffix in IMAGE_SUFFIXES:
+            return "Image Asset"
+        return "Other File"
 
     def _inspect_dbpf_package(self, path: Path) -> dict[str, int | str | bool]:
         if not path.exists() or not path.is_file():

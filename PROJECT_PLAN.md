@@ -7,6 +7,7 @@ S2-Atlas-Savegame-Editor wird ein vollwertiger Desktop-Editor fuer `The Sims 2`-
 
 Der Anspruch ist ausdruecklich groesser als ein Cheat-Tool:
 - komplette Nachbarschaften analysieren
+- die Hierarchie von Nachbarschaft -> Grundstueck -> Familie/Haushalt -> Sim sauber abbilden
 - Sims, Haushalte, Lots und Beziehungen bearbeiten
 - defekte oder inkonsistente Daten erkennen
 - problematische Komponenten entfernen oder rekonstruieren
@@ -59,16 +60,30 @@ Der Editor darf nicht nur einzelne Werte in einer abstrahierten JSON-Datei aende
 - transaktionale Schreibprozesse ueber mehrere beteiligte Dateien
 - Performance-Strategien fuer sehr grosse Nachbarschaften
 
+### 2.4 Aktuelle technische Arbeitsannahmen
+Zusaetzlich zu den bereits verifizierten Beobachtungen werden folgende Hinweise als Arbeitsgrundlage fuer Reverse Engineering und Architektur beruecksichtigt:
+
+- Ein Sims-2-Spielstand ist nicht als einzelne Save-Datei organisiert, sondern als Nachbarschaftsordner mit mehreren zusammenwirkenden Dateien.
+- `Neighborhoods/N001`, `N002` usw. sind eigenstaendige Savegame-Einheiten; Aenderungen wirken neighborhood-weit und bleiben ueber Haushaltswechsel hinweg bestehen.
+- Neben `.package`-Dateien koennen neighborhood-spezifische Rohdaten-Dateien wie `N001_0x00000000.dat` oder aehnliche Hilfsdateien relevant sein und muessen spaeter systematisch erfasst werden.
+- Vorhandene Werkzeuge wie `SimPE` sind eine wichtige Referenz fuer Reverse Engineering, Ressourcenbenennung, Chunk-Zuordnung und Editor-Workflows.
+- Das Datenformat muss als proprietaere Chunk-/Ressourcenstruktur behandelt werden; ein produktiver Editor darf sich nicht auf Dateinamen oder Dateisystem-Metadaten beschraenken.
+- Template-Nachbarschaften und Standarddaten aus den Installationsordnern sind fuer Vergleich, Reset-Szenarien und Baseline-Validierung relevant.
+
 ## 3. Scope: Was S2-Atlas-Savegame-Editor koennen soll
 
 ### 3.1 Vollstaendige inhaltliche Abdeckung
 Das Ziel ist, alle relevanten Aspekte eines Savegames anzusehen, zu analysieren und bei Bedarf zu veraendern. Dazu gehoeren mindestens:
 
 - Nachbarschaften
+- Nachbarschaftsmetadaten, globale Verknuepfungen und Zonenlogik
 - Suburbs und deren Verknuepfungen
-- Sims
-- Haushalte
 - Lots
+- Wohngrundstuecke und Gemeinschaftsgrundstuecke
+- Lot-Zoning, Groesse, Belegung und Neighborhood-Verknuepfung
+- Sims-Familien
+- Haushalte
+- Sims
 - Beziehungen
 - Familienbaeume und Verwandtschaft
 - Erinnerungen und Metadaten
@@ -97,6 +112,7 @@ Folgende Themen sind nachrangig, aber nicht ausgeschlossen:
 ### 4.1 Primaere Ziele
 - Echte Sims-2-Savegames als Ordnerstruktur und als verknuepfte Paketlandschaft laden
 - Alle wichtigen Entitaeten in einer einheitlichen Domain-Sicht abbilden
+- Die Spielstruktur von Nachbarschaft, Lots, Familien, Sims und Beziehungen fachlich korrekt modellieren
 - Defekte Referenzen, verwaiste Daten und potenziell gefaehrliche Inkonsistenzen erkennen
 - Sichere Editor-Workflows fuer Sims, Haushalte, Beziehungen, Lots und Nachbarschaften liefern
 - Reparaturvorschlaege mit nachvollziehbarer Risikoklassifikation anbieten
@@ -133,17 +149,40 @@ Folgende Themen sind nachrangig, aber nicht ausgeschlossen:
 - moechte korruptionsnahe Probleme finden und beheben
 - braucht Rohdatenansicht, Referenzgraphen, Regelpruefungen und Batch-Operationen
 
+### 5.4 Struktur fuer die Fachdomaene
+- Nachbarschaft ist die oberste Organisationsebene und der Einstiegspunkt fuer Navigation, Analyse und Repair
+- Grundstueck/Lot ist die raeumliche Ebene mit Zoning, Groesse, Typ und Verknuepfung zu Familien oder Besuchern
+- Familie/Haushalt ist die soziale und spielerische Verwaltungseinheit innerhalb einer Nachbarschaft
+- Sim ist die feinste editierbare Spieleinheit mit persoenlichen Daten, Werten und Referenzen
+- Beziehungen und Stammbaeume verlaufen quer durch Haushalte und muessen neighborhood-weit analysierbar bleiben
+
 ## 6. Funktionsumfang
 
 ### 6.1 Read-only Analyse
 - Laden von `The Sims 2`, `Neighborhoods` oder einzelner Neighborhood
 - Scan aller zugehoerigen Packages und Nebenressourcen
 - Projektuebersicht mit Groessen, Dateianzahl, Neighborhood-Struktur und Scan-Status
-- Explorer fuer Sims, Haushalte, Lots, Beziehungen, Erinnerungen und unbekannte Ressourcen
+- Explorer fuer Nachbarschaften, Lots, Familien/Haushalte, Sims, Beziehungen, Erinnerungen und unbekannte Ressourcen
 - Such- und Filterfunktionen ueber IDs, Namen, Status und Problemklassen
 - Referenzansichten: Wer verweist auf wen, was ist verwaist, was ist inkonsistent
 
 ### 6.2 Editor-Funktionen
+- Nachbarschaften bearbeiten:
+  - Name und Metadaten, soweit verfuegbar
+  - globale Verknuepfungen und Suburb-Struktur
+  - Scan-, Health- und Problemuebersicht auf Nachbarschaftsebene
+- Lots bearbeiten:
+  - Lot-Metadaten
+  - Lot-Typ und Zoning
+  - Groesse, Verknuepfungen und Belegung
+  - Verknuepfungen zu Haushalt/Nachbarschaft
+  - problematische Lots markieren oder isolieren
+- Familien/Haushalte bearbeiten:
+  - Name
+  - Funds
+  - Mitglieder
+  - Verknuepfung zu Wohngrundstueck
+  - grundlegende Metadaten
 - Sims bearbeiten:
   - Name
   - Alter/Lebensphase
@@ -153,24 +192,15 @@ Folgende Themen sind nachrangig, aber nicht ausgeschlossen:
   - Karriere und Karrierestufe
   - Haushaltszuordnung
   - Status-/Meta-Felder, soweit technisch abgesichert
-- Haushalte bearbeiten:
-  - Name
-  - Funds
-  - Mitglieder
-  - grundlegende Metadaten
 - Beziehungen bearbeiten:
   - Beziehungspaare erkennen
   - Scores und Flags anzeigen
   - Asymmetrien erkennen
   - Beziehungen hinzufuegen, korrigieren, entfernen
-- Lots bearbeiten:
-  - Lot-Metadaten
-  - Verknuepfungen zu Haushalt/Nachbarschaft
-  - problematische Lots markieren oder isolieren
-- Nachbarschaften bearbeiten:
-  - Name und Metadaten, soweit verfuegbar
-  - Suburb-Verknuepfungen
-  - globale Inkonsistenzen pruefen
+- Stammbaeume bearbeiten:
+  - Eltern-Kind-Beziehungen sichtbar machen
+  - Familienlinien ueber Haushalte hinweg pruefen
+  - defekte Verwandtschaftsreferenzen erkennen
 
 ### 6.3 Repair-Funktionen
 - Erkennung von:
@@ -212,10 +242,11 @@ Folgende Themen sind nachrangig, aber nicht ausgeschlossen:
 ### 7.2 Hauptbereiche der UI
 - Dashboard
 - Neighborhood Explorer
-- Sim Browser
-- Household Browser
-- Relationship Graph
 - Lot Browser
+- Family/Household Browser
+- Sim Browser
+- Relationship Graph
+- Family Tree / Kinship View
 - Validation Center
 - Repair Center
 - Change Log / Diff
@@ -232,7 +263,10 @@ Folgende Themen sind nachrangig, aber nicht ausgeschlossen:
 
 ### 7.4 Kritische Nutzerfluesse
 - Savegame oeffnen -> Scan -> Probleme anzeigen -> gezielte Reparatur
+- Nachbarschaft auswaehlen -> Lots/Familien/Sims eingrenzen -> Details verstehen -> validieren
+- Lot auswaehlen -> Typ/Belegung/Verknuepfungen pruefen -> Konflikte oder Defekte erkennen
 - Sim auswaehlen -> Werte aendern -> referenzbetroffene Folgeaenderungen sehen -> validieren -> speichern
+- Familie/Haushalt auswaehlen -> Mitglieder, Lot und Stammbaumkontext sehen -> Aenderungen absichern
 - Beziehungspaare anzeigen -> Inkonsistenzen erkennen -> korrigieren -> referenzielle Integritaet pruefen
 - Defektes Package erkennen -> Risiko einstufen -> entfernen/quarantainen -> Re-Scan
 
@@ -249,12 +283,14 @@ Schichtenmodell mit klaren Verantwortlichkeiten:
 ### 8.2 Zentrale technische Bausteine
 - Filesystem-Scanner fuer `The Sims 2`-Ordner
 - Package-Reader/Writer mit Ressourcenmodell
+- Reader fuer neighborhood-spezifische Rohdaten- und Hilfsdateien, sofern fuer Sims, Lots, Familien oder globale Zustandsdaten noetig
 - Domain-Mapping fuer Sims, Haushalte, Beziehungen, Lots und Neighborhoods
 - Referenzgraph ueber dateiuebergreifende IDs
 - Validierungsengine
 - Repair-Engine
 - Diff-Engine
 - Backup-/Rollback-Service
+- Import von Reverse-Engineering-Wissen aus SimPE, Community-Dokumentation und Vergleichsdateien
 - Telemetrie-/Logging-Komponenten fuer lokale Diagnose
 
 ### 8.3 Datenmodell
@@ -262,10 +298,13 @@ Mindestens benoetigte Entitaeten:
 - `SaveProject`
 - `Neighborhood`
 - `Suburb`
-- `Sim`
-- `Household`
-- `Relationship`
 - `Lot`
+- `LotOccupancy`
+- `Family`
+- `Household`
+- `Sim`
+- `Relationship`
+- `KinshipLink`
 - `Memory`
 - `PackageResource`
 - `ReferenceIssue`
@@ -316,6 +355,7 @@ Mindestens benoetigte Entitaeten:
 ### 9.5 Dokumentationsstandards
 - technische Parser-Dokumentation
 - Mapping-Dokumentation von Savegame-Struktur zu Domain-Modell
+- Reverse-Engineering-Notizen zu Chunk-/Ressourcentypen, Dateiformaten und bekannten SimPE-Entsprechungen
 - Repair-Katalog mit Problemtyp, Risiko und Loesungsstrategie
 - Nutzerdokumentation fuer riskante Operationen
 
@@ -334,6 +374,9 @@ Mindestens benoetigte Entitaeten:
 - Beziehungen zeigen auf existierende Sims
 - bidirektionale Beziehungen sind konsistent
 - Lot-Verknuepfungen stimmen mit Neighborhood-Daten ueberein
+- Wohngrundstueck und zugeordneter Haushalt bleiben konsistent
+- Gemeinschaftsgrundstuecke haben keine ungueltige Haushaltsbindung
+- Stammbaeume und Verwandtschaftslinks zeigen auf gueltige Sims
 - Lebensphase, Karriere, Wertebereiche und Flags sind plausibel
 
 ### 10.3 Repair-Klassifikation
@@ -356,6 +399,9 @@ Jede Repair-Aktion braucht:
 ### Phase 0: Discovery und Reverse Engineering
 - Referenz-Savegames sammeln und klassifizieren
 - Dateitypen, Package-Arten und Referenzmuster dokumentieren
+- neighborhood-spezifische `.dat`-, `.package`- und Nebenformate gegeneinander abgrenzen
+- SimPE-Workflows, Ressourcenbezeichnungen und bekannte Chunk-Zuordnungen systematisch auswerten
+- Template-Nachbarschaften aus Installationsdaten als Baseline fuer Vergleiche erfassen
 - erstes lesbares Ressourcenmodell definieren
 - bekannte Korruptionsmuster sammeln
 
@@ -363,12 +409,12 @@ Jede Repair-Aktion braucht:
 - stabiler Filesystem-Scanner
 - Neighborhood-, Character- und Lot-Inventar
 - Basis-Domain-Modell
-- read-only Explorer fuer Hauptentitaeten
+- read-only Explorer fuer Neighborhoods, Lots, Familien/Haushalte und Sims
 - erste Validierungsregeln
 
 ### Phase 2: Echter Parser-Kern
 - Binaerparser fuer priorisierte Package-Ressourcen
-- Mapping von Package-Daten auf Sims, Haushalte, Beziehungen und Lots
+- Mapping von Package-Daten auf Neighborhoods, Lots, Familien, Sims, Beziehungen und Stammbaeume
 - Referenzgraph und Cross-File-Index
 - Performance-Benchmark mit grossen Saves
 
@@ -376,7 +422,7 @@ Jede Repair-Aktion braucht:
 - transaktionales Schreiben
 - Backup-/Restore-Workflow
 - Undo/Redo auf Domain-Ebene
-- erste stabile Editoren fuer Sims, Haushalte und Beziehungen
+- erste stabile Editoren fuer Lots, Familien/Haushalte, Sims und Beziehungen
 
 ### Phase 4: Repair Center
 - Defekt-Scanner
@@ -400,16 +446,17 @@ Jede Repair-Aktion braucht:
 
 1. Referenz-Savegames systematisch katalogisieren und dokumentieren.
 2. Neighborhood-, Character- und Lot-Scanner finalisieren.
-3. Paket-Ressourcenmodell definieren.
-4. Parser fuer die ersten relevanten Sims-/Household-/Relationship-Ressourcen bauen.
-5. Cross-File-Referenzindex implementieren.
-6. Read-only Explorer fuer Sims, Haushalte, Lots und Beziehungen ausbauen.
-7. Validierungsengine fuer Referenzen und Wertebereiche erweitern.
-8. Repair-Katalog fuer bekannte Defekte definieren.
-9. Transaktionales Save/Backup/Restore implementieren.
-10. Erste echte Editoren fuer Sims, Haushalte und Beziehungen liefern.
-11. Diff-Ansicht fuer Mutation auf Entitaets- und Dateiebene bauen.
-12. Regressionstest-Korpus fuer defekte Savegames aufbauen.
+3. `.package`-, `.dat`- und weitere neighborhood-bezogene Dateitypen systematisch klassifizieren.
+4. Paket-/Chunk-/Ressourcenmodell definieren.
+5. Parser fuer die ersten relevanten Neighborhood-/Lot-/Family-/Sim-/Relationship-Ressourcen bauen.
+6. Read-only Explorer fuer Nachbarschaften, Lots, Familien/Haushalte, Sims und Beziehungen ausbauen.
+7. Cross-File-Referenzindex implementieren.
+8. Validierungsengine fuer Referenzen, Lot-Zoning, Haushaltsbindungen und Wertebereiche erweitern.
+9. Repair-Katalog fuer bekannte Defekte definieren.
+10. Transaktionales Save/Backup/Restore implementieren.
+11. Erste echte Editoren fuer Lots, Familien/Haushalte, Sims und Beziehungen liefern.
+12. Diff-Ansicht fuer Mutation auf Entitaets- und Dateiebene bauen.
+13. Regressionstest-Korpus fuer defekte Savegames aufbauen.
 
 ## 13. Definition of Done
 

@@ -71,13 +71,23 @@ def test_session_loads_sims2_folder_preview_and_blocks_save(tmp_path: Path) -> N
     neighborhood = root / "Neighborhoods" / "N001"
     characters = neighborhood / "Characters"
     lots = neighborhood / "Lots"
+    storytelling = neighborhood / "Storytelling"
+    thumbnails = neighborhood / "Thumbnails"
     characters.mkdir(parents=True)
     lots.mkdir(parents=True)
+    storytelling.mkdir(parents=True)
+    thumbnails.mkdir(parents=True)
 
     _write_fake_dbpf(neighborhood / "N001_Neighborhood.package", entry_count=2)
+    (neighborhood / "N001_Neighborhood.png").write_bytes(b"PNG")
+    (neighborhood / "N001_Neighborhood.reia").write_text("meta", encoding="utf-8")
+    (neighborhood / "N001_0x00000000.dat").write_bytes(b"\x01\x02\x03")
     _write_fake_dbpf(characters / "N001_User00000.package", entry_count=1)
     _write_fake_dbpf(characters / "N001_User00001.package", entry_count=1)
     _write_fake_dbpf(lots / "N001_Lot1.package", entry_count=1)
+    (storytelling / "webentry_0001.xml").write_text("<story />", encoding="utf-8")
+    (storytelling / "thumbnail_0001.jpg").write_bytes(b"JPG")
+    _write_fake_dbpf(thumbnails / "N001_FamilyThumbnails.package", entry_count=1)
 
     session = SaveSession()
     savegame = session.load(root)
@@ -96,6 +106,28 @@ def test_session_loads_sims2_folder_preview_and_blocks_save(tmp_path: Path) -> N
     assert savegame.households[0].metadata["main_package_info"]["index_entries_preview"][0]["type_name"] != ""
     assert savegame.households[0].metadata["main_package_info"]["index_entries_preview"][0]["domain_hint"] != ""
     assert isinstance(savegame.households[0].metadata["main_package_info"]["domain_profile"], list)
+    assert savegame.households[0].metadata["thumbnail_package_count"] == 1
+    assert savegame.households[0].metadata["thumbnail_package_paths"][0].endswith("N001_FamilyThumbnails.package")
+    assert savegame.households[0].metadata["thumbnail_package_infos"][0]["exists"] is True
+    file_inventory = savegame.households[0].metadata["file_inventory"]
+    assert file_inventory["total_file_count"] == 10
+    role_counts = {entry["role"]: entry["count"] for entry in file_inventory["role_profile"]}
+    assert role_counts["Neighborhood Main Package"] == 1
+    assert role_counts["Neighborhood Preview Image"] == 1
+    assert role_counts["Neighborhood Metadata"] == 1
+    assert role_counts["Raw Data"] == 1
+    assert role_counts["Character Package"] == 2
+    assert role_counts["Lot Package"] == 1
+    assert role_counts["Thumbnail Package"] == 1
+    assert role_counts["Storytelling Entry"] == 1
+    assert role_counts["Storytelling Image"] == 1
+    extension_counts = {entry["extension"]: entry["count"] for entry in file_inventory["extension_profile"]}
+    assert extension_counts[".package"] == 5
+    assert extension_counts[".dat"] == 1
+    assert extension_counts[".reia"] == 1
+    assert savegame.metadata["neighborhood_file_count"] == 10
+    assert isinstance(savegame.metadata["neighborhood_file_role_profile"], list)
+    assert isinstance(savegame.metadata["neighborhood_file_extension_profile"], list)
     assert len(savegame.sims) == 2
     assert savegame.sims[0].metadata["package_path"].endswith(".package")
     assert savegame.sims[0].metadata["package_info"]["exists"] is True
