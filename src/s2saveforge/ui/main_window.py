@@ -122,8 +122,9 @@ class MainWindow(QMainWindow):
         self.mode_label = QLabel("Mode: No save loaded", header)
         self.source_label = QLabel("Source: -", header)
         self.counts_label = QLabel("Households: 0 | Sims: 0 | Relationships: 0", header)
+        self.health_label = QLabel("Health: -", header)
 
-        for widget in (self.mode_label, self.source_label, self.counts_label):
+        for widget in (self.mode_label, self.source_label, self.counts_label, self.health_label):
             widget.setTextInteractionFlags(Qt.TextSelectableByMouse)
             stats_row.addWidget(widget, 1)
 
@@ -488,6 +489,7 @@ class MainWindow(QMainWindow):
             self.mode_label.setText("Mode: No save loaded")
             self.source_label.setText("Source: -")
             self.counts_label.setText("Households: 0 | Sims: 0 | Relationships: 0")
+            self.health_label.setText("Health: -")
             self._clear_sim_editor()
             self._set_editing_enabled(False)
             self._refresh_history_view()
@@ -542,6 +544,13 @@ class MainWindow(QMainWindow):
             "Households: "
             f"{len(savegame.households)} | Sims: {len(savegame.sims)} | Relationships: {len(savegame.relationships)}"
         )
+        issues = self.session.validate()
+        error_count = sum(1 for issue in issues if issue.severity == "error")
+        warning_count = sum(1 for issue in issues if issue.severity == "warning")
+        info_count = sum(1 for issue in issues if issue.severity == "info")
+        self.health_label.setText(
+            f"Health: {error_count} errors | {warning_count} warnings | {info_count} info"
+        )
 
     def _refresh_sim_list(self, *, select_current: bool = True) -> None:
         savegame = self.session.current
@@ -594,6 +603,8 @@ class MainWindow(QMainWindow):
         household = self._current_household()
         selected_sim = next((sim for sim in savegame.sims if sim.id == self._current_sim_id), None)
         mode_line = "Folder preview (read-only)" if self._is_preview_mode() else "Editable MVP save"
+        issues = self.session.validate()
+        issue_total = len(issues)
 
         lines = [
             "Workspace Overview",
@@ -603,8 +614,23 @@ class MainWindow(QMainWindow):
             f"Households: {len(savegame.households)}",
             f"Sims: {len(savegame.sims)}",
             f"Relationships: {len(savegame.relationships)}",
+            f"Validation issues: {issue_total}",
             "",
         ]
+
+        if savegame.metadata:
+            if savegame.metadata.get("source_kind") == "folder_preview":
+                lines.extend(
+                    [
+                        "Folder Preview",
+                        f"Neighborhood root: {savegame.metadata.get('neighborhoods_root', '-')}",
+                        f"Neighborhood count: {savegame.metadata.get('neighborhood_count', 0)}",
+                        "NeighborhoodManager.package: "
+                        + ("present" if savegame.metadata.get("neighborhood_manager_exists") else "missing"),
+                        f"Story entries found: {savegame.metadata.get('total_story_entries', 0)}",
+                        "",
+                    ]
+                )
 
         if household is not None:
             scope_label = "Neighborhood" if self._is_preview_mode() else "Household"
@@ -617,6 +643,24 @@ class MainWindow(QMainWindow):
                     "",
                 ]
             )
+            if household.metadata:
+                lines.extend(
+                    [
+                        "Selected scope details",
+                        f"Directory: {household.metadata.get('directory_path', '-')}",
+                        "Main package: "
+                        + ("present" if household.metadata.get("main_package_exists", True) else "missing"),
+                        "Characters dir: "
+                        + ("present" if household.metadata.get("characters_dir_exists", True) else "missing"),
+                        "Lots dir: "
+                        + ("present" if household.metadata.get("lots_dir_exists", True) else "missing"),
+                        f"Character packages: {household.metadata.get('character_count', len(household.members))}",
+                        f"Lot packages: {household.metadata.get('lot_count', 0)}",
+                        f"Suburbs: {household.metadata.get('suburb_count', 0)}",
+                        f"Story entries: {household.metadata.get('story_entry_count', 0)}",
+                        "",
+                    ]
+                )
 
         if selected_sim is not None:
             lines.extend(
@@ -630,6 +674,13 @@ class MainWindow(QMainWindow):
                     f"Skills tracked: {len(selected_sim.skills)}",
                 ]
             )
+            if selected_sim.metadata:
+                lines.extend(
+                    [
+                        f"Package path: {selected_sim.metadata.get('package_path', '-')}",
+                        f"Package size: {selected_sim.metadata.get('package_size', 0)} bytes",
+                    ]
+                )
         elif self.sim_list.count() > 0:
             lines.append("Select a Sim on the left to inspect and edit details here.")
         else:
@@ -782,6 +833,7 @@ class MainWindow(QMainWindow):
         self.validation_view.setPlainText("\n".join(lines))
         self.main_tabs.setCurrentWidget(self.validation_view)
         self.statusBar().showMessage(f"Validation complete: {len(issues)} issue(s)")
+        self._refresh_header()
 
 
 def run_app() -> int:

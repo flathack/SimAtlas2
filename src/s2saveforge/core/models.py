@@ -15,6 +15,7 @@ class Sim:
     career_level: int = 1
     needs: dict[str, int] = field(default_factory=dict)
     skills: dict[str, int] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> "Sim":
@@ -28,6 +29,7 @@ class Sim:
             career_level=int(data.get("career_level", 1)),
             needs={k: int(v) for k, v in dict(data.get("needs", {})).items()},
             skills={k: int(v) for k, v in dict(data.get("skills", {})).items()},
+            metadata=dict(data.get("metadata", {})),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -41,6 +43,7 @@ class Sim:
             "career_level": self.career_level,
             "needs": dict(self.needs),
             "skills": dict(self.skills),
+            "metadata": dict(self.metadata),
         }
 
 
@@ -50,6 +53,7 @@ class Household:
     name: str
     funds: int
     members: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> "Household":
@@ -58,6 +62,7 @@ class Household:
             name=str(data.get("name", "Unknown Household")),
             funds=int(data.get("funds", 0)),
             members=[str(member) for member in data.get("members", [])],
+            metadata=dict(data.get("metadata", {})),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -66,6 +71,7 @@ class Household:
             "name": self.name,
             "funds": self.funds,
             "members": list(self.members),
+            "metadata": dict(self.metadata),
         }
 
 
@@ -103,6 +109,7 @@ class SaveGame:
     sims: list[Sim] = field(default_factory=list)
     households: list[Household] = field(default_factory=list)
     relationships: list[Relationship] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> "SaveGame":
@@ -111,6 +118,7 @@ class SaveGame:
             sims=[Sim.from_dict(item) for item in data.get("sims", [])],
             households=[Household.from_dict(item) for item in data.get("households", [])],
             relationships=[Relationship.from_dict(item) for item in data.get("relationships", [])],
+            metadata=dict(data.get("metadata", {})),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -119,6 +127,7 @@ class SaveGame:
             "households": [household.to_dict() for household in self.households],
             "sims": [sim.to_dict() for sim in self.sims],
             "relationships": [rel.to_dict() for rel in self.relationships],
+            "metadata": dict(self.metadata),
         }
 
     def clone(self) -> "SaveGame":

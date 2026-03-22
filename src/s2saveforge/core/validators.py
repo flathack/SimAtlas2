@@ -15,6 +15,17 @@ class ValidationIssue:
 
 def validate_savegame(savegame: SaveGame) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
+    metadata = savegame.metadata
+
+    if metadata.get("source_kind") == "folder_preview":
+        if not metadata.get("neighborhood_manager_exists", False):
+            issues.append(
+                ValidationIssue(
+                    severity="warning",
+                    code="PREVIEW_MISSING_NEIGHBORHOOD_MANAGER",
+                    message="NeighborhoodManager.package is missing from the Neighborhoods folder.",
+                )
+            )
 
     sim_ids = {sim.id for sim in savegame.sims}
     household_ids = {household.id for household in savegame.households}
@@ -81,6 +92,54 @@ def validate_savegame(savegame: SaveGame) -> list[ValidationIssue]:
                 )
 
     for household in savegame.households:
+        household_meta = household.metadata
+        if household_meta.get("kind") == "neighborhood_preview":
+            if not household_meta.get("main_package_exists", False):
+                issues.append(
+                    ValidationIssue(
+                        severity="error",
+                        code="PREVIEW_MISSING_MAIN_PACKAGE",
+                        message="Neighborhood main package is missing.",
+                        entity_id=household.id,
+                    )
+                )
+            if not household_meta.get("characters_dir_exists", False):
+                issues.append(
+                    ValidationIssue(
+                        severity="error",
+                        code="PREVIEW_MISSING_CHARACTERS_DIR",
+                        message="Characters directory is missing.",
+                        entity_id=household.id,
+                    )
+                )
+            if not household_meta.get("lots_dir_exists", False):
+                issues.append(
+                    ValidationIssue(
+                        severity="warning",
+                        code="PREVIEW_MISSING_LOTS_DIR",
+                        message="Lots directory is missing.",
+                        entity_id=household.id,
+                    )
+                )
+            if household_meta.get("character_count", 0) == 0:
+                issues.append(
+                    ValidationIssue(
+                        severity="warning",
+                        code="PREVIEW_NO_CHARACTER_PACKAGES",
+                        message="No character packages were found for this neighborhood preview.",
+                        entity_id=household.id,
+                    )
+                )
+            if household_meta.get("lot_count", 0) == 0:
+                issues.append(
+                    ValidationIssue(
+                        severity="info",
+                        code="PREVIEW_NO_LOT_PACKAGES",
+                        message="No lot packages were found for this neighborhood preview.",
+                        entity_id=household.id,
+                    )
+                )
+
         if household.funds < 0:
             issues.append(
                 ValidationIssue(

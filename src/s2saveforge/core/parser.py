@@ -66,11 +66,21 @@ class SaveParser:
 
         households: list[Household] = []
         sims: list[Sim] = []
+        total_story_entries = 0
 
         for neighborhood_dir in neighborhood_dirs:
+            characters_dir = neighborhood_dir / "Characters"
+            lots_dir = neighborhood_dir / "Lots"
+            storytelling_dir = neighborhood_dir / "Storytelling"
+            thumbnails_dir = neighborhood_dir / "Thumbnails"
+            main_package_path = neighborhood_dir / f"{neighborhood_dir.name}_Neighborhood.package"
             package_count = len(list(neighborhood_dir.glob("*.package")))
-            lot_count = len(list((neighborhood_dir / "Lots").glob("*.package")))
-            character_files = sorted((neighborhood_dir / "Characters").glob("*.package"))
+            lot_files = sorted(lots_dir.glob("*.package"))
+            lot_count = len(lot_files)
+            character_files = sorted(characters_dir.glob("*.package"))
+            suburb_packages = sorted(neighborhood_dir.glob(f"{neighborhood_dir.name}_Suburb*.package"))
+            story_entries = sorted(storytelling_dir.glob("webentry_*.xml"))
+            total_story_entries += len(story_entries)
 
             members: list[str] = []
             for package_path in character_files:
@@ -87,6 +97,11 @@ class SaveParser:
                         career_level=1,
                         needs={},
                         skills={},
+                        metadata={
+                            "package_path": str(package_path),
+                            "package_size": package_path.stat().st_size,
+                            "neighborhood_id": neighborhood_dir.name,
+                        },
                     )
                 )
 
@@ -99,6 +114,23 @@ class SaveParser:
                     ),
                     funds=0,
                     members=members,
+                    metadata={
+                        "kind": "neighborhood_preview",
+                        "directory_path": str(neighborhood_dir),
+                        "main_package_path": str(main_package_path),
+                        "main_package_exists": main_package_path.exists(),
+                        "characters_dir_exists": characters_dir.is_dir(),
+                        "lots_dir_exists": lots_dir.is_dir(),
+                        "storytelling_dir_exists": storytelling_dir.is_dir(),
+                        "thumbnails_dir_exists": thumbnails_dir.is_dir(),
+                        "character_count": len(character_files),
+                        "lot_count": lot_count,
+                        "suburb_count": len(suburb_packages),
+                        "story_entry_count": len(story_entries),
+                        "top_level_package_count": package_count,
+                        "character_package_total_size": sum(path.stat().st_size for path in character_files),
+                        "lot_package_total_size": sum(path.stat().st_size for path in lot_files),
+                    },
                 )
             )
 
@@ -107,6 +139,13 @@ class SaveParser:
             households=households,
             sims=sims,
             relationships=[],
+            metadata={
+                "source_kind": "folder_preview",
+                "neighborhoods_root": str(neighborhoods_root),
+                "neighborhood_count": len(households),
+                "neighborhood_manager_exists": (neighborhoods_root / "NeighborhoodManager.package").exists(),
+                "total_story_entries": total_story_entries,
+            },
         )
 
     def _resolve_neighborhoods_root(self, path: Path) -> Path:
