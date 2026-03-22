@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import re
 import struct
+from collections import Counter
 
 from s2saveforge.core.models import Household, SaveGame, Sim
 
@@ -193,6 +194,16 @@ class SaveParser:
 
         magic, *values = struct.unpack("<4s23I", header)
         is_dbpf = magic == b"DBPF"
+        index_version_major = values[7]
+        index_entry_count = values[8]
+        index_offset = values[9]
+        index_size = values[10]
+        index_entries, index_entry_size = self._read_dbpf_index(path, index_offset, index_size, index_entry_count)
+        resource_type_counts = Counter(entry["type_hex"] for entry in index_entries)
+        top_resource_types = [
+            {"type_hex": resource_type, "count": count}
+            for resource_type, count in resource_type_counts.most_common(5)
+        ]
         return {
             "exists": True,
             "path": str(path),
@@ -201,12 +212,66 @@ class SaveParser:
             "magic": magic.decode("ascii", errors="replace"),
             "dbpf_version_major": values[0],
             "dbpf_version_minor": values[1],
-            "index_version_major": values[4],
-            "index_entry_count": values[5],
-            "index_offset": values[6],
-            "index_size": values[7],
-            "hole_entry_count": values[8],
-            "hole_offset": values[9],
-            "hole_size": values[10],
-            "index_version_minor": values[11],
+            "index_version_major": index_version_major,
+            "index_entry_count": index_entry_count,
+            "index_offset": index_offset,
+            "index_size": index_size,
+            "hole_entry_count": values[11],
+            "hole_offset": values[12],
+            "hole_size": values[13],
+            "index_version_minor": values[14],
+            "index_entry_size": index_entry_size,
+            "index_entries_preview": index_entries[:10],
+            "parsed_index_entry_count": len(index_entries),
+            "top_resource_types": top_resource_types,
         }
+
+    def _read_dbpf_index(
+        self,
+        path: Path,
+        index_offset: int,
+        index_size: int,
+        index_entry_count: int,
+    ) -> tuple[list[dict[str, int | str]], int]:
+        if index_entry_count <= 0 or index_size <= 0:
+            return [], 0
+
+        if index_size % index_entry_count != 0:
+            return [], 0
+
+        entry_size = index_size // index_entry_count
+        if entry_size not in (20, 24):
+            return [], entry_size
+
+        with path.open("rb") as handle:
+            handle.seek(index_offset)
+            index_data = handle.read(index_size)
+
+        entries: list[dict[str, int | str]] = []
+        for offset in range(0, len(index_data), entry_size):
+            chunk = index_data[offset : offset + entry_size]
+            if len(chunk) != entry_size:
+                continue
+
+            values = struct.unpack("<" + ("I" * (entry_size // 4)), chunk)
+            entry = {
+                "type_id": values[0],
+                "type_hex": f"0x{values[0]:08X}",
+                "group_id": values[1],
+                "group_hex": f"0x{values[1]:08X}",
+                "instance_id": values[2],
+                "instance_hex": f"0x{values[2]:08X}",
+                "resource_id": 0,
+                "resource_hex": "0x00000000",
+                "file_offset": values[3],
+                "file_size": values[4],
+            }
+            if entry_size == 24:
+                entry["resource_id"] = values[3]
+                entry["resource_hex"] = f"0x{values[3]:08X}"
+                entry["file_offset"] = values[4]
+                entry["file_size"] = values[5]
+
+            entries.append(entry)
+
+        return entries, entry_size

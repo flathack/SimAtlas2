@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import struct
 
 import pytest
 
@@ -73,10 +74,10 @@ def test_session_loads_sims2_folder_preview_and_blocks_save(tmp_path: Path) -> N
     characters.mkdir(parents=True)
     lots.mkdir(parents=True)
 
-    (neighborhood / "N001_Neighborhood.package").write_bytes(b"pkg")
-    (characters / "N001_User00000.package").write_bytes(b"sim-a")
-    (characters / "N001_User00001.package").write_bytes(b"sim-b")
-    (lots / "N001_Lot1.package").write_bytes(b"lot")
+    _write_fake_dbpf(neighborhood / "N001_Neighborhood.package", entry_count=2)
+    _write_fake_dbpf(characters / "N001_User00000.package", entry_count=1)
+    _write_fake_dbpf(characters / "N001_User00001.package", entry_count=1)
+    _write_fake_dbpf(lots / "N001_Lot1.package", entry_count=1)
 
     session = SaveSession()
     savegame = session.load(root)
@@ -89,10 +90,12 @@ def test_session_loads_sims2_folder_preview_and_blocks_save(tmp_path: Path) -> N
     assert savegame.households[0].metadata["lot_count"] == 1
     assert savegame.households[0].metadata["character_count"] == 2
     assert savegame.households[0].metadata["main_package_info"]["exists"] is True
-    assert savegame.households[0].metadata["main_package_info"]["is_dbpf"] is False
+    assert savegame.households[0].metadata["main_package_info"]["is_dbpf"] is True
+    assert savegame.households[0].metadata["main_package_info"]["parsed_index_entry_count"] == 2
     assert len(savegame.sims) == 2
     assert savegame.sims[0].metadata["package_path"].endswith(".package")
     assert savegame.sims[0].metadata["package_info"]["exists"] is True
+    assert savegame.sims[0].metadata["package_info"]["parsed_index_entry_count"] == 1
     assert savegame.metadata["source_kind"] == "folder_preview"
     assert savegame.metadata["neighborhood_manager_exists"] is False
     assert savegame.metadata["neighborhood_manager_info"]["exists"] is False
@@ -102,3 +105,51 @@ def test_session_loads_sims2_folder_preview_and_blocks_save(tmp_path: Path) -> N
 
     with pytest.raises(ReadOnlySaveFormatError):
         session.save()
+
+
+def _write_fake_dbpf(path: Path, entry_count: int) -> None:
+    index_offset = 96
+    entry_size = 20
+    index_size = entry_count * entry_size
+    values = [
+        1,  # major
+        2,  # minor
+        0,
+        0,
+        0,
+        0,
+        0,
+        7,  # index version major
+        entry_count,
+        index_offset,
+        index_size,
+        0,
+        0,
+        0,
+        2,  # index version minor
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
+    header = struct.pack("<4s23I", b"DBPF", *values)
+
+    entries = []
+    data_offset = index_offset + index_size
+    for idx in range(entry_count):
+        entries.append(
+            struct.pack(
+                "<5I",
+                0xE86B1EEF + idx,
+                0xFFFFFFFF,
+                idx + 1,
+                data_offset + (idx * 32),
+                32,
+            )
+        )
+
+    path.write_bytes(header + b"".join(entries) + (b"\x00" * (32 * entry_count)))

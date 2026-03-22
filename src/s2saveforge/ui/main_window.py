@@ -960,14 +960,37 @@ class MainWindow(QMainWindow):
                 f"Index version: {package_info.get('index_version_major', '-')}."
                 f"{package_info.get('index_version_minor', '-')}",
                 f"Index entries: {package_info.get('index_entry_count', 0)}",
+                f"Parsed index entries: {package_info.get('parsed_index_entry_count', 0)}",
+                f"Index entry size: {package_info.get('index_entry_size', 0)}",
                 f"Index offset: {package_info.get('index_offset', 0)}",
                 f"Index size: {package_info.get('index_size', 0)}",
                 f"Hole entries: {package_info.get('hole_entry_count', 0)}",
                 f"Hole offset: {package_info.get('hole_offset', 0)}",
                 f"Hole size: {package_info.get('hole_size', 0)}",
+            ]
+        )
+
+        top_resource_types = package_info.get("top_resource_types", [])
+        if isinstance(top_resource_types, list) and top_resource_types:
+            lines.extend(["", "Top resource types"])
+            for entry in top_resource_types:
+                lines.append(f"{entry.get('type_hex', '-')} x {entry.get('count', 0)}")
+
+        preview_entries = package_info.get("index_entries_preview", [])
+        if isinstance(preview_entries, list) and preview_entries:
+            lines.extend(["", "Index entry preview"])
+            for idx, entry in enumerate(preview_entries[:5], start=1):
+                lines.append(
+                    f"{idx}. {entry.get('type_hex', '-')} / {entry.get('group_hex', '-')} / "
+                    f"{entry.get('instance_hex', '-')} | offset {entry.get('file_offset', 0)} | "
+                    f"size {entry.get('file_size', 0)}"
+                )
+
+        lines.extend(
+            [
                 "",
                 "Next step",
-                "A future parser pass will decode DBPF index entries and map real game resources out of this package.",
+                "A future parser pass will map known DBPF resource types to real Sims, relationships, lots, and repair targets.",
             ]
         )
         self.package_view.setPlainText("\n".join(lines))
