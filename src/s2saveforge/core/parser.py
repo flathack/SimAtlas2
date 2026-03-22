@@ -7,6 +7,7 @@ import struct
 from collections import Counter
 
 from s2saveforge.core.models import Household, SaveGame, Sim
+from s2saveforge.core.simpe_reference import SimPEReferenceCatalog, load_simpe_reference_catalog
 
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".bmp"}
@@ -21,44 +22,73 @@ class ReadOnlySaveFormatError(RuntimeError):
 
 
 DBPF_RESOURCE_TYPE_NAMES: dict[int, str] = {
-    0x0C560F39: "Behavior Constant",
-    0x0F9F0C21: "Lot Description",
-    0x1C0532FA: "Texture Image",
-    0x2C1FD8A1: "Property Set",
-    0x42484156: "Behavior Function",
+    0x0BF999E7: "Lot Description",
+    0x0C560F39: "Binary Index",
+    0x104F6A6E: "Business Info",
+    0x2A51171B: "3D Array",
+    0x3053CF74: "Sim: Scores",
     0x46414D49: "Family Information",
-    0x4D51F042: "Neighborhood Terrain",
-    0x6B943B43: "Text List",
-    0x8C870743: "Sim Information",
-    0x8C151C70: "Object Data",
-    0x9A809646: "Slot Resource",
-    0xAACE2EFB: "Catalog Description",
-    0xAC506764: "Geometric Node",
-    0xCC364C2A: "3D Array",
-    0xCD95548E: "Name Reference",
-    0xCDB467B8: "Scene Node",
-    0xE519C933: "Material Definition",
-    0xEBFEE33F: "String Set",
+    0x484F5553: "House Descriptor",
+    0x4D51F042: "Cinematic Scene",
+    0x4E474248: "Neighborhood/Memory",
+    0x53494D49: "Sim Information",
+    0x6B943B43: "Lot Terrain Geometry",
+    0x6C589723: "Lot Definition",
+    0x8C870743: "Family Ties",
+    0xAACE2EFB: "Sim Description",
+    0xCC364C2A: "Sim Relations",
+    0xCD95548E: "Sim Wants and Fears",
+    0xE86B1EEF: "Directory of Compressed Files",
+    0xEBFEE33F: "Sim DNA",
+}
+
+DBPF_RESOURCE_SHORT_NAMES: dict[int, str] = {
+    0x0BF999E7: "LTXT",
+    0x0C560F39: "BINX",
+    0x104F6A6E: "BNFO",
+    0x2A51171B: "3ARY",
+    0x3053CF74: "SCOR",
+    0x46414D49: "FAMI",
+    0x484F5553: "HOUS",
+    0x4D51F042: "CINE",
+    0x4E474248: "NGBH",
+    0x53494D49: "SIMI",
+    0x6B943B43: "LOTG",
+    0x6C589723: "LOTD",
+    0x8C870743: "FAMT",
+    0xAACE2EFB: "SDSC",
+    0xCC364C2A: "SREL",
+    0xCD95548E: "SWAF",
+    0xE86B1EEF: "CLST",
+    0xEBFEE33F: "SDNA",
 }
 
 DBPF_DOMAIN_HINTS: dict[int, str] = {
-    0x0F9F0C21: "Lot",
+    0x0BF999E7: "Lot",
+    0x104F6A6E: "Business",
+    0x3053CF74: "Sim",
     0x46414D49: "Family",
+    0x484F5553: "Lot",
     0x4D51F042: "Neighborhood",
-    0x8C870743: "Sim",
-    0xCC364C2A: "Rendering",
-    0xEBFEE33F: "Strings",
-    0xCD95548E: "Names",
-    0xAC506764: "Rendering",
-    0x0C560F39: "Behavior",
-    0x42484156: "Behavior",
-    0x8C151C70: "Object",
+    0x4E474248: "Neighborhood",
+    0x53494D49: "Sim",
+    0x6B943B43: "Lot",
+    0x6C589723: "Lot",
+    0x8C870743: "Family",
+    0xAACE2EFB: "Sim",
+    0xCC364C2A: "Relationship",
+    0xCD95548E: "Sim",
+    0xE86B1EEF: "Compression",
+    0xEBFEE33F: "Sim",
 }
 
 
 class SaveParser:
     SUPPORTED_SUFFIXES = {".json", ".s2json"}
     NEIGHBORHOOD_PATTERN = re.compile(r"^[A-Z]\d{3}$")
+
+    def __init__(self, simpe_path: str | None = None) -> None:
+        self._simpe_reference: SimPEReferenceCatalog | None = load_simpe_reference_catalog(simpe_path)
 
     def read(self, path: Path) -> SaveGame:
         if path.is_dir():
@@ -236,6 +266,11 @@ class SaveParser:
                     {"extension": extension, "count": count}
                     for extension, count in neighborhood_file_extension_counts.most_common()
                 ],
+                "simpe_reference": {
+                    "loaded": self._simpe_reference is not None,
+                    "source_path": self._simpe_reference.source_path if self._simpe_reference else "",
+                    "known_hood_kinds": list(self._simpe_reference.hood_kinds) if self._simpe_reference else [],
+                },
                 "package_role_profile": [
                     {"role": role, "count": count}
                     for role, count in package_role_counts.most_common()
@@ -433,6 +468,7 @@ class SaveParser:
                 "type_id": values[0],
                 "type_hex": f"0x{values[0]:08X}",
                 "type_name": self._resource_type_name(values[0]),
+                "type_short_name": self._resource_short_name(values[0]),
                 "domain_hint": self._resource_domain_hint(values[0]),
                 "group_id": values[1],
                 "group_hex": f"0x{values[1]:08X}",
@@ -454,7 +490,14 @@ class SaveParser:
         return entries, entry_size
 
     def _resource_type_name(self, type_id: int) -> str:
+        if self._simpe_reference is not None and type_id in self._simpe_reference.type_entries:
+            return self._simpe_reference.type_entries[type_id].name
         return DBPF_RESOURCE_TYPE_NAMES.get(type_id, "Unknown Resource")
+
+    def _resource_short_name(self, type_id: int) -> str:
+        if self._simpe_reference is not None and type_id in self._simpe_reference.type_entries:
+            return self._simpe_reference.type_entries[type_id].short_name
+        return DBPF_RESOURCE_SHORT_NAMES.get(type_id, "UNK")
 
     def _resource_domain_hint(self, type_id: int) -> str:
         return DBPF_DOMAIN_HINTS.get(type_id, "Unknown")

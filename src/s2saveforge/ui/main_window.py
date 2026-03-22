@@ -887,6 +887,17 @@ class MainWindow(QMainWindow):
                     for entry in package_role_profile[:6]:
                         lines.append(f"{entry.get('role', 'Unknown')} x {entry.get('count', 0)}")
                     lines.append("")
+                simpe_reference = savegame.metadata.get("simpe_reference", {})
+                if isinstance(simpe_reference, dict) and simpe_reference.get("loaded"):
+                    lines.extend(
+                        [
+                            "SimPE reference",
+                            f"Source: {simpe_reference.get('source_path', '-')}",
+                            "Known hood kinds: "
+                            + ", ".join(simpe_reference.get("known_hood_kinds", []) or ["-"]),
+                            "",
+                        ]
+                    )
 
         if household is not None:
             scope_label = "Neighborhood" if self._is_preview_mode() else "Household"
@@ -1177,7 +1188,9 @@ class MainWindow(QMainWindow):
             lines.extend(["", "Top resource types"])
             for entry in top_resource_types:
                 lines.append(
-                    f"{entry.get('type_hex', '-')} ({entry.get('type_name', 'Unknown Resource')}, "
+                    f"{entry.get('type_hex', '-')} "
+                    f"[{entry.get('type_short_name', 'UNK')}] "
+                    f"({entry.get('type_name', 'Unknown Resource')}, "
                     f"{entry.get('domain_hint', 'Unknown')}) x "
                     f"{entry.get('count', 0)}"
                 )
@@ -1193,7 +1206,9 @@ class MainWindow(QMainWindow):
             lines.extend(["", "Index entry preview"])
             for idx, entry in enumerate(preview_entries[:5], start=1):
                 lines.append(
-                    f"{idx}. {entry.get('type_hex', '-')} ({entry.get('type_name', 'Unknown Resource')}) / "
+                    f"{idx}. {entry.get('type_hex', '-')} "
+                    f"[{entry.get('type_short_name', 'UNK')}] "
+                    f"({entry.get('type_name', 'Unknown Resource')}) / "
                     f"{entry.get('group_hex', '-')} / "
                     f"{entry.get('instance_hex', '-')} | offset {entry.get('file_offset', 0)} | "
                     f"size {entry.get('file_size', 0)} | domain {entry.get('domain_hint', 'Unknown')}"
@@ -1279,6 +1294,7 @@ class MainWindow(QMainWindow):
         self.resource_list.clear()
         for entry in entries:
             item = QListWidgetItem(
+                f"{entry.get('type_short_name', 'UNK')} - "
                 f"{entry.get('type_name', 'Unknown Resource')} [{entry.get('domain_hint', 'Unknown')}] | "
                 f"{entry.get('instance_hex', '-')} | size {entry.get('file_size', 0)}"
             )
@@ -1304,6 +1320,7 @@ class MainWindow(QMainWindow):
         lines = [
             "Selected Resource",
             "",
+            f"Short name: {entry.get('type_short_name', 'UNK')}",
             f"Type: {entry.get('type_name', 'Unknown Resource')}",
             f"Domain hint: {entry.get('domain_hint', 'Unknown')}",
             f"Type hex: {entry.get('type_hex', '-')}",
