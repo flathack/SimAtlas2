@@ -38,6 +38,20 @@ DBPF_RESOURCE_TYPE_NAMES: dict[int, str] = {
     0xEBFEE33F: "String Set",
 }
 
+DBPF_DOMAIN_HINTS: dict[int, str] = {
+    0x0F9F0C21: "Lot",
+    0x46414D49: "Family",
+    0x4D51F042: "Neighborhood",
+    0x8C870743: "Sim",
+    0xCC364C2A: "Rendering",
+    0xEBFEE33F: "Strings",
+    0xCD95548E: "Names",
+    0xAC506764: "Rendering",
+    0x0C560F39: "Behavior",
+    0x42484156: "Behavior",
+    0x8C151C70: "Object",
+}
+
 
 class SaveParser:
     SUPPORTED_SUFFIXES = {".json", ".s2json"}
@@ -226,10 +240,12 @@ class SaveParser:
             {
                 "type_hex": resource_type,
                 "type_name": self._resource_type_name(int(resource_type, 16)),
+                "domain_hint": self._resource_domain_hint(int(resource_type, 16)),
                 "count": count,
             }
             for resource_type, count in resource_type_counts.most_common(5)
         ]
+        domain_profile = self._build_domain_profile(index_entries)
         return {
             "exists": True,
             "path": str(path),
@@ -250,6 +266,7 @@ class SaveParser:
             "index_entries_preview": index_entries[:10],
             "parsed_index_entry_count": len(index_entries),
             "top_resource_types": top_resource_types,
+            "domain_profile": domain_profile,
         }
 
     def _read_dbpf_index(
@@ -284,6 +301,7 @@ class SaveParser:
                 "type_id": values[0],
                 "type_hex": f"0x{values[0]:08X}",
                 "type_name": self._resource_type_name(values[0]),
+                "domain_hint": self._resource_domain_hint(values[0]),
                 "group_id": values[1],
                 "group_hex": f"0x{values[1]:08X}",
                 "instance_id": values[2],
@@ -305,3 +323,13 @@ class SaveParser:
 
     def _resource_type_name(self, type_id: int) -> str:
         return DBPF_RESOURCE_TYPE_NAMES.get(type_id, "Unknown Resource")
+
+    def _resource_domain_hint(self, type_id: int) -> str:
+        return DBPF_DOMAIN_HINTS.get(type_id, "Unknown")
+
+    def _build_domain_profile(self, index_entries: list[dict[str, int | str]]) -> list[dict[str, int | str]]:
+        counts = Counter(str(entry.get("domain_hint", "Unknown")) for entry in index_entries)
+        return [
+            {"domain": domain, "count": count}
+            for domain, count in counts.most_common(6)
+        ]

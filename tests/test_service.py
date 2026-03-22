@@ -93,6 +93,8 @@ def test_session_loads_sims2_folder_preview_and_blocks_save(tmp_path: Path) -> N
     assert savegame.households[0].metadata["main_package_info"]["is_dbpf"] is True
     assert savegame.households[0].metadata["main_package_info"]["parsed_index_entry_count"] == 2
     assert savegame.households[0].metadata["main_package_info"]["index_entries_preview"][0]["type_name"] != ""
+    assert savegame.households[0].metadata["main_package_info"]["index_entries_preview"][0]["domain_hint"] != ""
+    assert isinstance(savegame.households[0].metadata["main_package_info"]["domain_profile"], list)
     assert len(savegame.sims) == 2
     assert savegame.sims[0].metadata["package_path"].endswith(".package")
     assert savegame.sims[0].metadata["package_info"]["exists"] is True

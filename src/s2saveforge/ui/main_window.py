@@ -1010,9 +1010,16 @@ class MainWindow(QMainWindow):
             lines.extend(["", "Top resource types"])
             for entry in top_resource_types:
                 lines.append(
-                    f"{entry.get('type_hex', '-')} ({entry.get('type_name', 'Unknown Resource')}) x "
+                    f"{entry.get('type_hex', '-')} ({entry.get('type_name', 'Unknown Resource')}, "
+                    f"{entry.get('domain_hint', 'Unknown')}) x "
                     f"{entry.get('count', 0)}"
                 )
+
+        domain_profile = package_info.get("domain_profile", [])
+        if isinstance(domain_profile, list) and domain_profile:
+            lines.extend(["", "Likely domain profile"])
+            for entry in domain_profile:
+                lines.append(f"{entry.get('domain', 'Unknown')} x {entry.get('count', 0)}")
 
         preview_entries = package_info.get("index_entries_preview", [])
         if isinstance(preview_entries, list) and preview_entries:
@@ -1022,7 +1029,7 @@ class MainWindow(QMainWindow):
                     f"{idx}. {entry.get('type_hex', '-')} ({entry.get('type_name', 'Unknown Resource')}) / "
                     f"{entry.get('group_hex', '-')} / "
                     f"{entry.get('instance_hex', '-')} | offset {entry.get('file_offset', 0)} | "
-                    f"size {entry.get('file_size', 0)}"
+                    f"size {entry.get('file_size', 0)} | domain {entry.get('domain_hint', 'Unknown')}"
                 )
 
         lines.extend(
@@ -1102,7 +1109,7 @@ class MainWindow(QMainWindow):
         self.resource_list.clear()
         for entry in entries:
             item = QListWidgetItem(
-                f"{entry.get('type_name', 'Unknown Resource')} | "
+                f"{entry.get('type_name', 'Unknown Resource')} [{entry.get('domain_hint', 'Unknown')}] | "
                 f"{entry.get('instance_hex', '-')} | size {entry.get('file_size', 0)}"
             )
             item.setData(Qt.UserRole, entry)
@@ -1128,6 +1135,7 @@ class MainWindow(QMainWindow):
             "Selected Resource",
             "",
             f"Type: {entry.get('type_name', 'Unknown Resource')}",
+            f"Domain hint: {entry.get('domain_hint', 'Unknown')}",
             f"Type hex: {entry.get('type_hex', '-')}",
             f"Group: {entry.get('group_hex', '-')}",
             f"Instance: {entry.get('instance_hex', '-')}",
