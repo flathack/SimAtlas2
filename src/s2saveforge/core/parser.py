@@ -17,6 +17,28 @@ class ReadOnlySaveFormatError(RuntimeError):
     pass
 
 
+DBPF_RESOURCE_TYPE_NAMES: dict[int, str] = {
+    0x0C560F39: "Behavior Constant",
+    0x0F9F0C21: "Lot Description",
+    0x1C0532FA: "Texture Image",
+    0x2C1FD8A1: "Property Set",
+    0x42484156: "Behavior Function",
+    0x46414D49: "Family Information",
+    0x4D51F042: "Neighborhood Terrain",
+    0x6B943B43: "Text List",
+    0x8C870743: "Sim Information",
+    0x8C151C70: "Object Data",
+    0x9A809646: "Slot Resource",
+    0xAACE2EFB: "Catalog Description",
+    0xAC506764: "Geometric Node",
+    0xCC364C2A: "3D Array",
+    0xCD95548E: "Name Reference",
+    0xCDB467B8: "Scene Node",
+    0xE519C933: "Material Definition",
+    0xEBFEE33F: "String Set",
+}
+
+
 class SaveParser:
     SUPPORTED_SUFFIXES = {".json", ".s2json"}
     NEIGHBORHOOD_PATTERN = re.compile(r"^[A-Z]\d{3}$")
@@ -201,7 +223,11 @@ class SaveParser:
         index_entries, index_entry_size = self._read_dbpf_index(path, index_offset, index_size, index_entry_count)
         resource_type_counts = Counter(entry["type_hex"] for entry in index_entries)
         top_resource_types = [
-            {"type_hex": resource_type, "count": count}
+            {
+                "type_hex": resource_type,
+                "type_name": self._resource_type_name(int(resource_type, 16)),
+                "count": count,
+            }
             for resource_type, count in resource_type_counts.most_common(5)
         ]
         return {
@@ -257,6 +283,7 @@ class SaveParser:
             entry = {
                 "type_id": values[0],
                 "type_hex": f"0x{values[0]:08X}",
+                "type_name": self._resource_type_name(values[0]),
                 "group_id": values[1],
                 "group_hex": f"0x{values[1]:08X}",
                 "instance_id": values[2],
@@ -275,3 +302,6 @@ class SaveParser:
             entries.append(entry)
 
         return entries, entry_size
+
+    def _resource_type_name(self, type_id: int) -> str:
+        return DBPF_RESOURCE_TYPE_NAMES.get(type_id, "Unknown Resource")

@@ -305,6 +305,37 @@ class MainWindow(QMainWindow):
 
         right_panel.addTab(package_page, "Package Inspector")
 
+        resources_page = QWidget(right_panel)
+        resources_layout = QVBoxLayout(resources_page)
+        resources_layout.setContentsMargins(12, 12, 12, 12)
+        resources_layout.setSpacing(10)
+
+        resource_filter_row = QHBoxLayout()
+        resource_filter_row.setSpacing(8)
+
+        resource_type_label = QLabel("Resource Type Filter", resources_page)
+        resource_type_label.setObjectName("sectionTitle")
+        resource_filter_row.addWidget(resource_type_label)
+
+        self.resource_type_select = QComboBox(resources_page)
+        self.resource_type_select.currentIndexChanged.connect(self._refresh_resource_browser)
+        resource_filter_row.addWidget(self.resource_type_select, 1)
+        resources_layout.addLayout(resource_filter_row)
+
+        self.resource_summary_view = QTextEdit(resources_page)
+        self.resource_summary_view.setReadOnly(True)
+        resources_layout.addWidget(self.resource_summary_view, 1)
+
+        self.resource_list = QListWidget(resources_page)
+        self.resource_list.currentItemChanged.connect(self._on_resource_selected)
+        resources_layout.addWidget(self.resource_list, 1)
+
+        self.resource_detail_view = QTextEdit(resources_page)
+        self.resource_detail_view.setReadOnly(True)
+        resources_layout.addWidget(self.resource_detail_view, 1)
+
+        right_panel.addTab(resources_page, "Resources")
+
         splitter.setSizes([320, 960])
 
     def _apply_window_style(self) -> None:
@@ -559,6 +590,8 @@ class MainWindow(QMainWindow):
             self._refresh_issue_center()
             self._refresh_package_source_options()
             self._refresh_package_inspector()
+            self._refresh_resource_type_options()
+            self._refresh_resource_browser()
             self.household_list.blockSignals(False)
             self.household_select.blockSignals(False)
             self.sim_list.blockSignals(False)
@@ -586,6 +619,8 @@ class MainWindow(QMainWindow):
         self._refresh_issue_center()
         self._refresh_package_source_options()
         self._refresh_package_inspector()
+        self._refresh_resource_type_options()
+        self._refresh_resource_browser()
 
         self.household_list.blockSignals(False)
         self.household_select.blockSignals(False)
@@ -974,14 +1009,18 @@ class MainWindow(QMainWindow):
         if isinstance(top_resource_types, list) and top_resource_types:
             lines.extend(["", "Top resource types"])
             for entry in top_resource_types:
-                lines.append(f"{entry.get('type_hex', '-')} x {entry.get('count', 0)}")
+                lines.append(
+                    f"{entry.get('type_hex', '-')} ({entry.get('type_name', 'Unknown Resource')}) x "
+                    f"{entry.get('count', 0)}"
+                )
 
         preview_entries = package_info.get("index_entries_preview", [])
         if isinstance(preview_entries, list) and preview_entries:
             lines.extend(["", "Index entry preview"])
             for idx, entry in enumerate(preview_entries[:5], start=1):
                 lines.append(
-                    f"{idx}. {entry.get('type_hex', '-')} / {entry.get('group_hex', '-')} / "
+                    f"{idx}. {entry.get('type_hex', '-')} ({entry.get('type_name', 'Unknown Resource')}) / "
+                    f"{entry.get('group_hex', '-')} / "
                     f"{entry.get('instance_hex', '-')} | offset {entry.get('file_offset', 0)} | "
                     f"size {entry.get('file_size', 0)}"
                 )
@@ -994,6 +1033,112 @@ class MainWindow(QMainWindow):
             ]
         )
         self.package_view.setPlainText("\n".join(lines))
+
+    def _resource_entries_for_current_package(self) -> list[dict]:
+        selected_path = self.package_source_select.currentData()
+        if not isinstance(selected_path, str):
+            return []
+        package_info = self._lookup_package_info(selected_path)
+        if not package_info:
+            return []
+        entries = package_info.get("index_entries_preview", [])
+        if not isinstance(entries, list):
+            return []
+        return entries
+
+    def _refresh_resource_type_options(self) -> None:
+        entries = self._resource_entries_for_current_package()
+        current_value = self.resource_type_select.currentData()
+        self.resource_type_select.blockSignals(True)
+        self.resource_type_select.clear()
+        self.resource_type_select.addItem("All resource types", "__all__")
+
+        seen: set[str] = set()
+        for entry in entries:
+            type_hex = str(entry.get("type_hex", "0x00000000"))
+            if type_hex in seen:
+                continue
+            seen.add(type_hex)
+            type_name = str(entry.get("type_name", "Unknown Resource"))
+            self.resource_type_select.addItem(f"{type_name} ({type_hex})", type_hex)
+
+        for index in range(self.resource_type_select.count()):
+            if self.resource_type_select.itemData(index) == current_value:
+                self.resource_type_select.setCurrentIndex(index)
+                break
+        else:
+            self.resource_type_select.setCurrentIndex(0)
+        self.resource_type_select.blockSignals(False)
+
+    def _filtered_resource_entries(self) -> list[dict]:
+        entries = self._resource_entries_for_current_package()
+        selected_type = self.resource_type_select.currentData()
+        if selected_type in (None, "__all__"):
+            return entries
+        return [entry for entry in entries if entry.get("type_hex") == selected_type]
+
+    def _refresh_resource_browser(self) -> None:
+        entries = self._filtered_resource_entries()
+        if not entries:
+            self.resource_summary_view.setPlainText(
+                "No parsed resource entries available for the current package and filter.\n\n"
+                "Right now the browser shows the parsed preview entries from the DBPF index."
+            )
+            self.resource_list.clear()
+            self.resource_detail_view.setPlainText("No resource selected.")
+            return
+
+        summary_lines = [
+            "Resource Browser",
+            "",
+            f"Visible entries: {len(entries)}",
+            f"Current filter: {self.resource_type_select.currentText() or 'All resource types'}",
+            "",
+            "This is a preview of parsed DBPF index entries from the selected package.",
+        ]
+        self.resource_summary_view.setPlainText("\n".join(summary_lines))
+
+        self.resource_list.blockSignals(True)
+        self.resource_list.clear()
+        for entry in entries:
+            item = QListWidgetItem(
+                f"{entry.get('type_name', 'Unknown Resource')} | "
+                f"{entry.get('instance_hex', '-')} | size {entry.get('file_size', 0)}"
+            )
+            item.setData(Qt.UserRole, entry)
+            self.resource_list.addItem(item)
+        self.resource_list.blockSignals(False)
+
+        if self.resource_list.count() > 0:
+            self.resource_list.setCurrentRow(0)
+        else:
+            self.resource_detail_view.setPlainText("No resource selected.")
+
+    def _on_resource_selected(self, current: QListWidgetItem | None, _previous: QListWidgetItem | None) -> None:
+        if current is None:
+            self.resource_detail_view.setPlainText("No resource selected.")
+            return
+
+        entry = current.data(Qt.UserRole)
+        if not isinstance(entry, dict):
+            self.resource_detail_view.setPlainText("No resource selected.")
+            return
+
+        lines = [
+            "Selected Resource",
+            "",
+            f"Type: {entry.get('type_name', 'Unknown Resource')}",
+            f"Type hex: {entry.get('type_hex', '-')}",
+            f"Group: {entry.get('group_hex', '-')}",
+            f"Instance: {entry.get('instance_hex', '-')}",
+            f"Resource: {entry.get('resource_hex', '-')}",
+            f"Offset: {entry.get('file_offset', 0)}",
+            f"Size: {entry.get('file_size', 0)}",
+            "",
+            "Next step",
+            "A future pass will decode payloads for known resource types and link them to Sims, relationships, lots, and repair actions.",
+        ]
+        self.resource_detail_view.setPlainText("\n".join(lines))
 
     def _clear_sim_editor(self) -> None:
         self.sim_name.clear()
