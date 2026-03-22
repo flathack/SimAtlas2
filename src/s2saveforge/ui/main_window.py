@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
 from s2saveforge.core.models import SaveGame
 from s2saveforge.core.parser import ReadOnlySaveFormatError, UnsupportedSaveFormatError
 from s2saveforge.core.service import SaveSession
+from s2saveforge.core.validators import ValidationIssue, group_issues_by_entity, summarize_issues
 
 
 class MainWindow(QMainWindow):
@@ -248,6 +249,38 @@ class MainWindow(QMainWindow):
         self.history_view = QTextEdit(right_panel)
         self.history_view.setReadOnly(True)
         right_panel.addTab(self.history_view, "Changes")
+
+        issues_page = QWidget(right_panel)
+        issues_layout = QVBoxLayout(issues_page)
+        issues_layout.setContentsMargins(12, 12, 12, 12)
+        issues_layout.setSpacing(10)
+
+        issues_filter_row = QHBoxLayout()
+        issues_filter_row.setSpacing(8)
+
+        issues_scope_label = QLabel("Issue Scope", issues_page)
+        issues_scope_label.setObjectName("sectionTitle")
+        issues_filter_row.addWidget(issues_scope_label)
+
+        self.issue_scope_select = QComboBox(issues_page)
+        self.issue_scope_select.currentIndexChanged.connect(self._refresh_issue_center)
+        issues_filter_row.addWidget(self.issue_scope_select, 1)
+
+        issues_layout.addLayout(issues_filter_row)
+
+        self.issue_summary_view = QTextEdit(issues_page)
+        self.issue_summary_view.setReadOnly(True)
+        issues_layout.addWidget(self.issue_summary_view, 1)
+
+        self.issue_detail_list = QListWidget(issues_page)
+        self.issue_detail_list.currentItemChanged.connect(self._on_issue_selected)
+        issues_layout.addWidget(self.issue_detail_list, 1)
+
+        self.issue_detail_view = QTextEdit(issues_page)
+        self.issue_detail_view.setReadOnly(True)
+        issues_layout.addWidget(self.issue_detail_view, 1)
+
+        right_panel.addTab(issues_page, "Issue Center")
 
         splitter.setSizes([320, 960])
 
@@ -494,6 +527,7 @@ class MainWindow(QMainWindow):
             self._set_editing_enabled(False)
             self._refresh_history_view()
             self._refresh_overview()
+            self._refresh_issue_center()
             self.household_list.blockSignals(False)
             self.household_select.blockSignals(False)
             self.sim_list.blockSignals(False)
@@ -517,6 +551,8 @@ class MainWindow(QMainWindow):
         self._refresh_header()
         self._refresh_history_view()
         self._refresh_overview()
+        self._refresh_issue_scope_options()
+        self._refresh_issue_center()
 
         self.household_list.blockSignals(False)
         self.household_select.blockSignals(False)
@@ -544,12 +580,9 @@ class MainWindow(QMainWindow):
             "Households: "
             f"{len(savegame.households)} | Sims: {len(savegame.sims)} | Relationships: {len(savegame.relationships)}"
         )
-        issues = self.session.validate()
-        error_count = sum(1 for issue in issues if issue.severity == "error")
-        warning_count = sum(1 for issue in issues if issue.severity == "warning")
-        info_count = sum(1 for issue in issues if issue.severity == "info")
+        summary = summarize_issues(self.session.validate())
         self.health_label.setText(
-            f"Health: {error_count} errors | {warning_count} warnings | {info_count} info"
+            f"Health: {summary['error']} errors | {summary['warning']} warnings | {summary['info']} info"
         )
 
     def _refresh_sim_list(self, *, select_current: bool = True) -> None:
@@ -699,6 +732,102 @@ class MainWindow(QMainWindow):
             lines.insert(0, "Read-only filesystem preview loaded from a Sims 2 folder.")
         self.history_view.setPlainText("\n".join(lines))
 
+    def _refresh_issue_scope_options(self) -> None:
+        savegame = self.session.current
+        current_value = self.issue_scope_select.currentData()
+        self.issue_scope_select.blockSignals(True)
+        self.issue_scope_select.clear()
+        self.issue_scope_select.addItem("All issues", "__all__")
+        self.issue_scope_select.addItem("Global issues", "_global")
+
+        if savegame is not None:
+            for household in savegame.households:
+                self.issue_scope_select.addItem(f"{household.id} issues", household.id)
+
+        for index in range(self.issue_scope_select.count()):
+            if self.issue_scope_select.itemData(index) == current_value:
+                self.issue_scope_select.setCurrentIndex(index)
+                break
+        else:
+            self.issue_scope_select.setCurrentIndex(0)
+        self.issue_scope_select.blockSignals(False)
+
+    def _issues_for_current_scope(self) -> list[ValidationIssue]:
+        issues = self.session.validate()
+        scope = self.issue_scope_select.currentData()
+        if scope in (None, "__all__"):
+            return issues
+        if scope == "_global":
+            return [issue for issue in issues if not issue.entity_id]
+        return [issue for issue in issues if issue.entity_id == scope or issue.entity_id.startswith(f"{scope}->")]
+
+    def _refresh_issue_center(self) -> None:
+        issues = self._issues_for_current_scope()
+        summary = summarize_issues(issues)
+        grouped = group_issues_by_entity(issues)
+
+        if not issues:
+            self.issue_summary_view.setPlainText(
+                "No issues in the selected scope.\n\nThis is where grouped validation and repair candidates will appear."
+            )
+            self.issue_detail_list.clear()
+            self.issue_detail_view.setPlainText("No issue selected.")
+            return
+
+        summary_lines = [
+            "Issue Summary",
+            "",
+            f"Total: {summary['total']}",
+            f"Errors: {summary['error']}",
+            f"Warnings: {summary['warning']}",
+            f"Info: {summary['info']}",
+            "",
+            f"Affected entities: {len(grouped)}",
+        ]
+        self.issue_summary_view.setPlainText("\n".join(summary_lines))
+
+        self.issue_detail_list.blockSignals(True)
+        self.issue_detail_list.clear()
+        for issue in issues:
+            entity = issue.entity_id or "global"
+            item = QListWidgetItem(f"[{issue.severity.upper()}] {entity} - {issue.code}")
+            item.setData(Qt.UserRole, issue.code)
+            item.setData(Qt.UserRole + 1, issue.message)
+            item.setData(Qt.UserRole + 2, entity)
+            item.setData(Qt.UserRole + 3, issue.severity)
+            self.issue_detail_list.addItem(item)
+        self.issue_detail_list.blockSignals(False)
+
+        if self.issue_detail_list.count() > 0:
+            self.issue_detail_list.setCurrentRow(0)
+        else:
+            self.issue_detail_view.setPlainText("No issue selected.")
+
+    def _on_issue_selected(self, current: QListWidgetItem | None, _previous: QListWidgetItem | None) -> None:
+        if current is None:
+            self.issue_detail_view.setPlainText("No issue selected.")
+            return
+
+        issue_code = current.data(Qt.UserRole)
+        message = current.data(Qt.UserRole + 1)
+        entity = current.data(Qt.UserRole + 2)
+        severity = current.data(Qt.UserRole + 3)
+
+        lines = [
+            "Selected Issue",
+            "",
+            f"Severity: {severity}",
+            f"Entity: {entity}",
+            f"Code: {issue_code}",
+            "",
+            "Message",
+            str(message),
+            "",
+            "Next step",
+            "This issue is currently read-only. A future repair workflow will attach suggested fixes here.",
+        ]
+        self.issue_detail_view.setPlainText("\n".join(lines))
+
     def _clear_sim_editor(self) -> None:
         self.sim_name.clear()
         self.sim_age.setCurrentText("unknown")
@@ -834,6 +963,7 @@ class MainWindow(QMainWindow):
         self.main_tabs.setCurrentWidget(self.validation_view)
         self.statusBar().showMessage(f"Validation complete: {len(issues)} issue(s)")
         self._refresh_header()
+        self._refresh_issue_center()
 
 
 def run_app() -> int:

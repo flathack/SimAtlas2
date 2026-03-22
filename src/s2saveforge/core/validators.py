@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections import Counter
 
 from s2saveforge.core.models import SaveGame
 
@@ -11,6 +12,24 @@ class ValidationIssue:
     code: str
     message: str
     entity_id: str = ""
+
+
+def summarize_issues(issues: list[ValidationIssue]) -> dict[str, int]:
+    counts = Counter(issue.severity for issue in issues)
+    return {
+        "error": counts.get("error", 0),
+        "warning": counts.get("warning", 0),
+        "info": counts.get("info", 0),
+        "total": len(issues),
+    }
+
+
+def group_issues_by_entity(issues: list[ValidationIssue]) -> dict[str, list[ValidationIssue]]:
+    grouped: dict[str, list[ValidationIssue]] = {}
+    for issue in issues:
+        entity_id = issue.entity_id or "_global"
+        grouped.setdefault(entity_id, []).append(issue)
+    return grouped
 
 
 def validate_savegame(savegame: SaveGame) -> list[ValidationIssue]:

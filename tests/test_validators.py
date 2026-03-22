@@ -1,5 +1,5 @@
 from s2saveforge.core.models import Household, Relationship, SaveGame, Sim
-from s2saveforge.core.validators import validate_savegame
+from s2saveforge.core.validators import group_issues_by_entity, summarize_issues, validate_savegame
 
 
 def test_validate_detects_invalid_references_and_ranges() -> None:
@@ -70,3 +70,21 @@ def test_validate_detects_preview_filesystem_problems() -> None:
     assert "PREVIEW_MISSING_LOTS_DIR" in codes
     assert "PREVIEW_NO_CHARACTER_PACKAGES" in codes
     assert "PREVIEW_NO_LOT_PACKAGES" in codes
+
+
+def test_issue_helpers_summarize_and_group() -> None:
+    save = SaveGame(
+        version="0.1",
+        households=[Household(id="hh-1", name="Test HH", funds=-5, members=["missing"])],
+        sims=[],
+        relationships=[],
+    )
+
+    issues = validate_savegame(save)
+    summary = summarize_issues(issues)
+    grouped = group_issues_by_entity(issues)
+
+    assert summary["total"] == len(issues)
+    assert summary["warning"] >= 1
+    assert summary["error"] >= 1
+    assert "hh-1" in grouped
