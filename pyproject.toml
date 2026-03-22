@@ -3,19 +3,19 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "s2-save-forge"
+name = "s2atlas"
 version = "0.1.0"
-description = "Desktop editor foundation for The Sims 2 save data"
+description = "S2-Atlas-Savegame-Editor for The Sims 2 save data"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "S2 Save Forge Team" }]
+authors = [{ name = "s2atlas Team" }]
 dependencies = [
   "PySide6>=6.7,<7",
 ]
 
 [project.scripts]
-s2-save-forge = "s2saveforge.main:main"
+s2atlas = "s2saveforge.main:main"
 
 [project.optional-dependencies]
 dev = [

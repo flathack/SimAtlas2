@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from string import Template
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -34,16 +35,73 @@ from s2saveforge.core.models import SaveGame
 from s2saveforge.core.parser import ReadOnlySaveFormatError, UnsupportedSaveFormatError
 from s2saveforge.core.service import SaveSession
 from s2saveforge.core.validators import ValidationIssue, group_issues_by_entity, summarize_issues
+from s2saveforge import __app_name__, __app_shortname__
 
 
 class MainWindow(QMainWindow):
+    THEMES = {
+        "light": {
+            "window_bg": "#f3efe7",
+            "toolbar_bg": "#ddd2bf",
+            "toolbar_text": "#221a14",
+            "toolbutton_bg": "#fffdf8",
+            "toolbutton_border": "#b8a790",
+            "toolbutton_hover": "#efe4d2",
+            "surface_bg": "#fffdf9",
+            "surface_border": "#cdbca4",
+            "field_bg": "#fffefb",
+            "field_border": "#c5b59e",
+            "field_text": "#1d1814",
+            "muted_text": "#5f5143",
+            "primary_text": "#201913",
+            "section_text": "#403227",
+            "button_bg": "#6e4f2f",
+            "button_hover": "#5f4328",
+            "button_text": "#fffdf9",
+            "button_disabled": "#b9ab97",
+            "tab_bg": "#e7dbc8",
+            "tab_active_bg": "#fffefb",
+            "selection_bg": "#d7b98f",
+            "selection_text": "#1b1612",
+            "status_bg": "#ddd2bf",
+            "status_text": "#201913",
+        },
+        "dark": {
+            "window_bg": "#14181d",
+            "toolbar_bg": "#1d242c",
+            "toolbar_text": "#eef2f5",
+            "toolbutton_bg": "#212a33",
+            "toolbutton_border": "#415161",
+            "toolbutton_hover": "#2b3743",
+            "surface_bg": "#1a2129",
+            "surface_border": "#34424f",
+            "field_bg": "#11171d",
+            "field_border": "#4a5b69",
+            "field_text": "#f3f6f8",
+            "muted_text": "#b7c2cb",
+            "primary_text": "#f7fafc",
+            "section_text": "#dbe5eb",
+            "button_bg": "#d9a15d",
+            "button_hover": "#ebaf66",
+            "button_text": "#16110c",
+            "button_disabled": "#667583",
+            "tab_bg": "#202933",
+            "tab_active_bg": "#11171d",
+            "selection_bg": "#3f6f9a",
+            "selection_text": "#ffffff",
+            "status_bg": "#1d242c",
+            "status_text": "#eef2f5",
+        },
+    }
+
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("SimAtlas2")
+        self.setWindowTitle(__app_name__)
 
         self.session = SaveSession()
         self._current_sim_id = ""
         self._current_household_filter_id = ""
+        self._theme_name = "light"
 
         self._build_actions()
         self._build_layout()
@@ -78,6 +136,20 @@ class MainWindow(QMainWindow):
         action_validate = QAction("Validate", self)
         action_validate.triggered.connect(self.run_validation)
 
+        self.action_light_theme = QAction("Light Theme", self)
+        self.action_light_theme.setCheckable(True)
+        self.action_light_theme.triggered.connect(lambda: self._set_theme("light"))
+
+        self.action_dark_theme = QAction("Dark Theme", self)
+        self.action_dark_theme.setCheckable(True)
+        self.action_dark_theme.triggered.connect(lambda: self._set_theme("dark"))
+
+        theme_group = QActionGroup(self)
+        theme_group.setExclusive(True)
+        theme_group.addAction(self.action_light_theme)
+        theme_group.addAction(self.action_dark_theme)
+        self.action_light_theme.setChecked(True)
+
         toolbar = self.addToolBar("Main")
         toolbar.setMovable(False)
         toolbar.addAction(action_open)
@@ -91,6 +163,9 @@ class MainWindow(QMainWindow):
         toolbar.addAction(action_redo)
         toolbar.addSeparator()
         toolbar.addAction(action_validate)
+        toolbar.addSeparator()
+        toolbar.addAction(self.action_light_theme)
+        toolbar.addAction(self.action_dark_theme)
 
     def _build_layout(self) -> None:
         root = QWidget(self)
@@ -106,12 +181,12 @@ class MainWindow(QMainWindow):
         header_layout.setContentsMargins(16, 14, 16, 14)
         header_layout.setSpacing(8)
 
-        title = QLabel("SimAtlas2 Workspace", header)
+        title = QLabel(__app_name__, header)
         title.setObjectName("heroTitle")
         header_layout.addWidget(title)
 
         self.banner_label = QLabel(
-            "Open a Sims 2 folder or demo save to start browsing households, Sims, and validation details.",
+            f"Open a Sims 2 folder or demo save to start working in {__app_shortname__}.",
             header,
         )
         self.banner_label.setWordWrap(True)
@@ -339,52 +414,67 @@ class MainWindow(QMainWindow):
         splitter.setSizes([320, 960])
 
     def _apply_window_style(self) -> None:
-        self.setStyleSheet(
+        theme = self.THEMES[self._theme_name]
+        stylesheet = Template(
             """
             QMainWindow {
-                background: #f4f1ea;
+                background: $window_bg;
+                color: $primary_text;
             }
             QToolBar {
-                background: #e5dccd;
+                background: $toolbar_bg;
                 border: none;
                 spacing: 6px;
                 padding: 6px;
+                color: $toolbar_text;
             }
             QToolButton {
-                background: #fffaf0;
-                border: 1px solid #d0c2ad;
+                background: $toolbutton_bg;
+                color: $toolbar_text;
+                border: 1px solid $toolbutton_border;
                 border-radius: 6px;
                 padding: 6px 10px;
             }
             QToolButton:hover {
-                background: #f8ecd6;
+                background: $toolbutton_hover;
+            }
+            QToolButton:checked {
+                background: $selection_bg;
+                color: $selection_text;
             }
             #summaryCard {
-                background: #fffaf0;
-                border: 1px solid #d8ccb8;
+                background: $surface_bg;
+                border: 1px solid $surface_border;
                 border-radius: 12px;
             }
             #heroTitle {
                 font-size: 22px;
                 font-weight: 700;
-                color: #3e3123;
+                color: $primary_text;
             }
             #sectionTitle {
                 font-size: 13px;
                 font-weight: 700;
-                color: #5b4b3a;
+                color: $section_text;
+            }
+            QLabel, QGroupBox, QCheckBox, QRadioButton {
+                color: $primary_text;
             }
             QListWidget, QLineEdit, QComboBox, QSpinBox, QTextEdit, QTableWidget {
-                background: #fffdf8;
-                border: 1px solid #d6c8b4;
+                background: $field_bg;
+                color: $field_text;
+                border: 1px solid $field_border;
                 border-radius: 8px;
+                selection-background-color: $selection_bg;
+                selection-color: $selection_text;
             }
             QGroupBox {
-                border: 1px solid #d6c8b4;
+                border: 1px solid $surface_border;
                 border-radius: 10px;
                 margin-top: 14px;
-                background: #fffaf0;
+                background: $surface_bg;
                 font-weight: 700;
+                color: $primary_text;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
@@ -392,32 +482,59 @@ class MainWindow(QMainWindow):
                 padding: 0 4px;
             }
             QPushButton {
-                background: #7f5f3a;
-                color: white;
+                background: $button_bg;
+                color: $button_text;
                 border: none;
                 border-radius: 8px;
                 padding: 8px 12px;
             }
+            QPushButton:hover {
+                background: $button_hover;
+            }
             QPushButton:disabled {
-                background: #bba98d;
+                background: $button_disabled;
+                color: $button_text;
             }
             QTabWidget::pane {
-                border: 1px solid #d6c8b4;
-                background: #fffdf8;
+                border: 1px solid $surface_border;
+                background: $surface_bg;
                 border-radius: 10px;
             }
             QTabBar::tab {
-                background: #e9dfcf;
+                background: $tab_bg;
+                color: $primary_text;
                 padding: 8px 12px;
                 margin-right: 4px;
                 border-top-left-radius: 8px;
                 border-top-right-radius: 8px;
             }
             QTabBar::tab:selected {
-                background: #fffdf8;
+                background: $tab_active_bg;
+                color: $primary_text;
+            }
+            QStatusBar {
+                background: $status_bg;
+                color: $status_text;
+            }
+            QHeaderView::section {
+                background: $tab_bg;
+                color: $primary_text;
+                border: 1px solid $field_border;
+                padding: 4px 6px;
+            }
+            QAbstractItemView {
+                alternate-background-color: $surface_bg;
             }
             """
-        )
+        ).substitute(theme)
+        self.setStyleSheet(stylesheet)
+
+    def _set_theme(self, theme_name: str) -> None:
+        if theme_name not in self.THEMES or theme_name == self._theme_name:
+            return
+        self._theme_name = theme_name
+        self._apply_window_style()
+        self.statusBar().showMessage(f"Theme changed to {theme_name}")
 
     def _is_preview_mode(self) -> bool:
         savegame = self.session.current
@@ -577,7 +694,7 @@ class MainWindow(QMainWindow):
         if savegame is None:
             self.scope_title.setText("Households")
             self.banner_label.setText(
-                "Open a Sims 2 folder or demo save to start browsing households, Sims, and validation details."
+                f"Open a Sims 2 folder or demo save to start working in {__app_shortname__}."
             )
             self.mode_label.setText("Mode: No save loaded")
             self.source_label.setText("Source: -")
@@ -634,12 +751,12 @@ class MainWindow(QMainWindow):
         source = str(self.session.source_path) if self.session.source_path else "-"
         if self._is_preview_mode():
             self.banner_label.setText(
-                "Read-only folder preview loaded. You can inspect neighborhoods and Sims now; package-level editing comes next."
+                f"Read-only folder preview loaded in {__app_shortname__}. You can inspect neighborhoods and Sims now; package-level editing comes next."
             )
             self.mode_label.setText("Mode: Folder preview (read-only)")
         else:
             self.banner_label.setText(
-                "Editable save loaded. Use the left side to narrow scope, then change household or Sim data in the editor."
+                f"Editable save loaded in {__app_shortname__}. Use the left side to narrow scope, then change household or Sim data in the editor."
             )
             self.mode_label.setText("Mode: Editable MVP save")
 

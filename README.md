@@ -1,4 +1,4 @@
-# S2 Save Forge
+# S2-Atlas-Savegame-Editor
 
 Python-basierte Desktop-Grundlage fuer einen Sims-2-Savegame-Editor.
 
@@ -24,7 +24,7 @@ Hinweis: Der proprietaere Sims-2-Binaerparser ist bewusst noch als naechster Sch
    - pip install -e .
 5. App starten:
    - python -m s2saveforge
-   - alternativ: s2-save-forge
+   - alternativ: s2atlas
 
 ## Tests
 

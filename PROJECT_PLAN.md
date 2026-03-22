@@ -1,9 +1,9 @@
-# Projektplan: SimAtlas2
+# Projektplan: S2-Atlas-Savegame-Editor
 
 ## 1. Produktvision
 
 ### 1.1 Zielbild
-SimAtlas2 wird ein vollwertiger Desktop-Editor fuer `The Sims 2`-Savegames. Die Software soll echte Spielstaende nicht nur laden, sondern deren relevante Datenstrukturen systematisch analysieren, visualisieren, validieren, reparieren und gezielt veraendern koennen.
+S2-Atlas-Savegame-Editor wird ein vollwertiger Desktop-Editor fuer `The Sims 2`-Savegames. Die Software soll echte Spielstaende nicht nur laden, sondern deren relevante Datenstrukturen systematisch analysieren, visualisieren, validieren, reparieren und gezielt veraendern koennen.
 
 Der Anspruch ist ausdruecklich groesser als ein Cheat-Tool:
 - komplette Nachbarschaften analysieren
@@ -17,7 +17,7 @@ Der Anspruch ist ausdruecklich groesser als ein Cheat-Tool:
 Langjaehrige Sims-2-Spielstaende werden oft durch inkonsistente Referenzen, unvollstaendige Daten, Mods, falsche Lebensphasen, fehlerhafte Beziehungsdaten oder beschaedigte Packages unbrauchbar. Gleichzeitig fehlen moderne Werkzeuge, die sowohl tief genug fuer Reparaturen als auch sicher genug fuer Alltagsnutzung sind.
 
 ### 1.3 Produktversprechen
-SimAtlas2 soll:
+S2-Atlas-Savegame-Editor soll:
 - alles Relevante im Savegame sichtbar machen
 - moeglichst alle bearbeitbaren Aspekte kontrolliert editierbar machen
 - Defekte nicht nur melden, sondern in einen reproduzierbaren Repair-Workflow ueberfuehren
@@ -59,7 +59,7 @@ Der Editor darf nicht nur einzelne Werte in einer abstrahierten JSON-Datei aende
 - transaktionale Schreibprozesse ueber mehrere beteiligte Dateien
 - Performance-Strategien fuer sehr grosse Nachbarschaften
 
-## 3. Scope: Was SimAtlas2 koennen soll
+## 3. Scope: Was S2-Atlas-Savegame-Editor koennen soll
 
 ### 3.1 Vollstaendige inhaltliche Abdeckung
 Das Ziel ist, alle relevanten Aspekte eines Savegames anzusehen, zu analysieren und bei Bedarf zu veraendern. Dazu gehoeren mindestens:
@@ -79,7 +79,7 @@ Das Ziel ist, alle relevanten Aspekte eines Savegames anzusehen, zu analysieren 
 - mod- oder custom-content-bezogene Inkonsistenzen, soweit technisch erfassbar
 
 ### 3.2 Kernfaehigkeiten
-SimAtlas2 soll fuer jede unterstuetzte Datenart vier Dinge koennen:
+S2-Atlas-Savegame-Editor soll fuer jede unterstuetzte Datenart vier Dinge koennen:
 - anzeigen
 - durchsuchen und filtern
 - validieren
@@ -426,4 +426,4 @@ Ein Feature gilt nur dann als fertig, wenn:
 
 ## 14. Ergebnis
 
-SimAtlas2 soll zu einem professionell aufgebauten Sims-2-Savegame-Editor werden, der reale Nachbarschaften umfassend lesen, verstehen, pruefen, reparieren und veraendern kann. Das Projekt richtet sich nicht auf einen engen MVP mit Beispiel-JSONs aus, sondern auf eine robuste Arbeitsumgebung fuer echte Savegames, inklusive grosser und potenziell beschaedigter Spielstaende.
+S2-Atlas-Savegame-Editor soll zu einem professionell aufgebauten Sims-2-Savegame-Editor werden, der reale Nachbarschaften umfassend lesen, verstehen, pruefen, reparieren und veraendern kann. Das Projekt richtet sich nicht auf einen engen MVP mit Beispiel-JSONs aus, sondern auf eine robuste Arbeitsumgebung fuer echte Savegames, inklusive grosser und potenziell beschaedigter Spielstaende.
