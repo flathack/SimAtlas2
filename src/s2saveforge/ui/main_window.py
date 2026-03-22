@@ -282,6 +282,29 @@ class MainWindow(QMainWindow):
 
         right_panel.addTab(issues_page, "Issue Center")
 
+        package_page = QWidget(right_panel)
+        package_layout = QVBoxLayout(package_page)
+        package_layout.setContentsMargins(12, 12, 12, 12)
+        package_layout.setSpacing(10)
+
+        package_filter_row = QHBoxLayout()
+        package_filter_row.setSpacing(8)
+
+        package_scope_label = QLabel("Package Source", package_page)
+        package_scope_label.setObjectName("sectionTitle")
+        package_filter_row.addWidget(package_scope_label)
+
+        self.package_source_select = QComboBox(package_page)
+        self.package_source_select.currentIndexChanged.connect(self._refresh_package_inspector)
+        package_filter_row.addWidget(self.package_source_select, 1)
+        package_layout.addLayout(package_filter_row)
+
+        self.package_view = QTextEdit(package_page)
+        self.package_view.setReadOnly(True)
+        package_layout.addWidget(self.package_view, 1)
+
+        right_panel.addTab(package_page, "Package Inspector")
+
         splitter.setSizes([320, 960])
 
     def _apply_window_style(self) -> None:
@@ -392,6 +415,8 @@ class MainWindow(QMainWindow):
         self._set_household_combo_by_id(household_id)
         self._refresh_sim_list()
         self._refresh_overview()
+        self._refresh_package_source_options()
+        self._refresh_package_inspector()
 
     def _on_household_selected(self, index: int) -> None:
         savegame = self.session.current
@@ -404,6 +429,8 @@ class MainWindow(QMainWindow):
         self._select_household_list_item(household.id)
         self._refresh_sim_list()
         self._refresh_overview()
+        self._refresh_package_source_options()
+        self._refresh_package_inspector()
 
     def _on_sim_selected(self, current: QListWidgetItem | None, _previous: QListWidgetItem | None) -> None:
         if current is None:
@@ -434,6 +461,8 @@ class MainWindow(QMainWindow):
         self._fill_table(self.skills_table, sim.skills)
         self._set_household_combo_by_id(sim.household_id)
         self._refresh_overview()
+        self._refresh_package_source_options()
+        self._refresh_package_inspector()
 
     def _fill_table(self, table: QTableWidget, data: dict[str, int]) -> None:
         table.setRowCount(len(data))
@@ -528,6 +557,8 @@ class MainWindow(QMainWindow):
             self._refresh_history_view()
             self._refresh_overview()
             self._refresh_issue_center()
+            self._refresh_package_source_options()
+            self._refresh_package_inspector()
             self.household_list.blockSignals(False)
             self.household_select.blockSignals(False)
             self.sim_list.blockSignals(False)
@@ -553,6 +584,8 @@ class MainWindow(QMainWindow):
         self._refresh_overview()
         self._refresh_issue_scope_options()
         self._refresh_issue_center()
+        self._refresh_package_source_options()
+        self._refresh_package_inspector()
 
         self.household_list.blockSignals(False)
         self.household_select.blockSignals(False)
@@ -827,6 +860,117 @@ class MainWindow(QMainWindow):
             "This issue is currently read-only. A future repair workflow will attach suggested fixes here.",
         ]
         self.issue_detail_view.setPlainText("\n".join(lines))
+
+    def _refresh_package_source_options(self) -> None:
+        savegame = self.session.current
+        current_value = self.package_source_select.currentData()
+        preferred_value = current_value
+        self.package_source_select.blockSignals(True)
+        self.package_source_select.clear()
+
+        if savegame is None:
+            self.package_source_select.blockSignals(False)
+            return
+
+        manager_path = savegame.metadata.get("neighborhood_manager_path")
+        if manager_path:
+            self.package_source_select.addItem("NeighborhoodManager.package", manager_path)
+
+        household = self._current_household()
+        if household is not None:
+            main_path = household.metadata.get("main_package_path")
+            if main_path:
+                self.package_source_select.addItem(f"{household.id} main package", main_path)
+            for suburb_path in household.metadata.get("suburb_package_paths", []):
+                self.package_source_select.addItem(Path(suburb_path).name, suburb_path)
+
+        selected_sim = next((sim for sim in savegame.sims if sim.id == self._current_sim_id), None)
+        if selected_sim is not None and selected_sim.metadata.get("package_path"):
+            preferred_value = selected_sim.metadata["package_path"]
+            self.package_source_select.addItem(
+                f"{selected_sim.id} character package",
+                selected_sim.metadata["package_path"],
+            )
+        elif household is not None and household.metadata.get("main_package_path"):
+            preferred_value = household.metadata["main_package_path"]
+
+        for index in range(self.package_source_select.count()):
+            if self.package_source_select.itemData(index) == preferred_value:
+                self.package_source_select.setCurrentIndex(index)
+                break
+        else:
+            if self.package_source_select.count() > 0:
+                self.package_source_select.setCurrentIndex(0)
+
+        self.package_source_select.blockSignals(False)
+
+    def _lookup_package_info(self, path_text: str) -> dict | None:
+        savegame = self.session.current
+        if savegame is None:
+            return None
+
+        if savegame.metadata.get("neighborhood_manager_path") == path_text:
+            return savegame.metadata.get("neighborhood_manager_info")
+
+        for household in savegame.households:
+            if household.metadata.get("main_package_path") == path_text:
+                return household.metadata.get("main_package_info")
+
+        for sim in savegame.sims:
+            if sim.metadata.get("package_path") == path_text:
+                return sim.metadata.get("package_info")
+
+        return None
+
+    def _refresh_package_inspector(self) -> None:
+        if self.package_source_select.count() == 0:
+            self.package_view.setPlainText(
+                "No package selected.\n\nLoad a save and choose a package source to inspect its DBPF header."
+            )
+            return
+
+        selected_path = self.package_source_select.currentData()
+        if not isinstance(selected_path, str):
+            self.package_view.setPlainText("No package selected.")
+            return
+
+        package_info = self._lookup_package_info(selected_path)
+        if not package_info:
+            self.package_view.setPlainText("No package metadata available for the selected source.")
+            return
+
+        lines = [
+            "Package Inspector",
+            "",
+            f"Path: {package_info.get('path', selected_path)}",
+            f"Exists: {package_info.get('exists', False)}",
+        ]
+
+        if not package_info.get("exists", False):
+            self.package_view.setPlainText("\n".join(lines))
+            return
+
+        lines.extend(
+            [
+                f"Size: {package_info.get('size', 0)} bytes",
+                f"Magic: {package_info.get('magic', '-')}",
+                f"DBPF: {package_info.get('is_dbpf', False)}",
+                f"DBPF version: {package_info.get('dbpf_version_major', '-')}."
+                f"{package_info.get('dbpf_version_minor', '-')}",
+                f"Index version: {package_info.get('index_version_major', '-')}."
+                f"{package_info.get('index_version_minor', '-')}",
+                f"Index entries: {package_info.get('index_entry_count', 0)}",
+                f"Index offset: {package_info.get('index_offset', 0)}",
+                f"Index size: {package_info.get('index_size', 0)}",
+                f"Hole entries: {package_info.get('hole_entry_count', 0)}",
+                f"Hole offset: {package_info.get('hole_offset', 0)}",
+                f"Hole size: {package_info.get('hole_size', 0)}",
+                "",
+                "Next step",
+                "A future parser pass will decode DBPF index entries and map real game resources out of this package.",
+            ]
+        )
+        self.package_view.setPlainText("\n".join(lines))
 
     def _clear_sim_editor(self) -> None:
         self.sim_name.clear()

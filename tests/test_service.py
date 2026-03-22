@@ -88,10 +88,14 @@ def test_session_loads_sims2_folder_preview_and_blocks_save(tmp_path: Path) -> N
     assert savegame.households[0].metadata["main_package_exists"] is True
     assert savegame.households[0].metadata["lot_count"] == 1
     assert savegame.households[0].metadata["character_count"] == 2
+    assert savegame.households[0].metadata["main_package_info"]["exists"] is True
+    assert savegame.households[0].metadata["main_package_info"]["is_dbpf"] is False
     assert len(savegame.sims) == 2
     assert savegame.sims[0].metadata["package_path"].endswith(".package")
+    assert savegame.sims[0].metadata["package_info"]["exists"] is True
     assert savegame.metadata["source_kind"] == "folder_preview"
     assert savegame.metadata["neighborhood_manager_exists"] is False
+    assert savegame.metadata["neighborhood_manager_info"]["exists"] is False
 
     with pytest.raises(ReadOnlySaveFormatError):
         session.create_backup()

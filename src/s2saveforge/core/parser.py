@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
+import struct
 
 from s2saveforge.core.models import Household, SaveGame, Sim
 
@@ -81,11 +82,13 @@ class SaveParser:
             suburb_packages = sorted(neighborhood_dir.glob(f"{neighborhood_dir.name}_Suburb*.package"))
             story_entries = sorted(storytelling_dir.glob("webentry_*.xml"))
             total_story_entries += len(story_entries)
+            main_package_info = self._inspect_dbpf_package(main_package_path)
 
             members: list[str] = []
             for package_path in character_files:
                 sim_id = package_path.stem
                 members.append(sim_id)
+                package_info = self._inspect_dbpf_package(package_path)
                 sims.append(
                     Sim(
                         id=sim_id,
@@ -101,6 +104,7 @@ class SaveParser:
                             "package_path": str(package_path),
                             "package_size": package_path.stat().st_size,
                             "neighborhood_id": neighborhood_dir.name,
+                            "package_info": package_info,
                         },
                     )
                 )
@@ -130,10 +134,13 @@ class SaveParser:
                         "top_level_package_count": package_count,
                         "character_package_total_size": sum(path.stat().st_size for path in character_files),
                         "lot_package_total_size": sum(path.stat().st_size for path in lot_files),
+                        "main_package_info": main_package_info,
+                        "suburb_package_paths": [str(package) for package in suburb_packages],
                     },
                 )
             )
 
+        neighborhood_manager_path = neighborhoods_root / "NeighborhoodManager.package"
         return SaveGame(
             version=f"fs-preview:{neighborhoods_root}",
             households=households,
@@ -143,7 +150,9 @@ class SaveParser:
                 "source_kind": "folder_preview",
                 "neighborhoods_root": str(neighborhoods_root),
                 "neighborhood_count": len(households),
-                "neighborhood_manager_exists": (neighborhoods_root / "NeighborhoodManager.package").exists(),
+                "neighborhood_manager_exists": neighborhood_manager_path.exists(),
+                "neighborhood_manager_path": str(neighborhood_manager_path),
+                "neighborhood_manager_info": self._inspect_dbpf_package(neighborhood_manager_path),
                 "total_story_entries": total_story_entries,
             },
         )
@@ -162,3 +171,42 @@ class SaveParser:
         raise UnsupportedSaveFormatError(
             "Select either 'The Sims 2', its 'Neighborhoods' folder, or a neighborhood folder like 'N001'."
         )
+
+    def _inspect_dbpf_package(self, path: Path) -> dict[str, int | str | bool]:
+        if not path.exists() or not path.is_file():
+            return {
+                "exists": False,
+                "path": str(path),
+            }
+
+        with path.open("rb") as handle:
+            header = handle.read(96)
+
+        if len(header) < 96:
+            return {
+                "exists": True,
+                "path": str(path),
+                "size": path.stat().st_size,
+                "is_dbpf": False,
+                "error": "header_too_small",
+            }
+
+        magic, *values = struct.unpack("<4s23I", header)
+        is_dbpf = magic == b"DBPF"
+        return {
+            "exists": True,
+            "path": str(path),
+            "size": path.stat().st_size,
+            "is_dbpf": is_dbpf,
+            "magic": magic.decode("ascii", errors="replace"),
+            "dbpf_version_major": values[0],
+            "dbpf_version_minor": values[1],
+            "index_version_major": values[4],
+            "index_entry_count": values[5],
+            "index_offset": values[6],
+            "index_size": values[7],
+            "hole_entry_count": values[8],
+            "hole_offset": values[9],
+            "hole_size": values[10],
+            "index_version_minor": values[11],
+        }
