@@ -105,6 +105,7 @@ class SaveParser:
         households: list[Household] = []
         sims: list[Sim] = []
         total_story_entries = 0
+        package_role_counts: Counter[str] = Counter()
 
         for neighborhood_dir in neighborhood_dirs:
             characters_dir = neighborhood_dir / "Characters"
@@ -120,12 +121,14 @@ class SaveParser:
             story_entries = sorted(storytelling_dir.glob("webentry_*.xml"))
             total_story_entries += len(story_entries)
             main_package_info = self._inspect_dbpf_package(main_package_path)
+            package_role_counts.update([str(main_package_info.get("package_role", "Unknown"))])
 
             members: list[str] = []
             for package_path in character_files:
                 sim_id = package_path.stem
                 members.append(sim_id)
                 package_info = self._inspect_dbpf_package(package_path)
+                package_role_counts.update([str(package_info.get("package_role", "Unknown"))])
                 sims.append(
                     Sim(
                         id=sim_id,
@@ -173,11 +176,18 @@ class SaveParser:
                         "lot_package_total_size": sum(path.stat().st_size for path in lot_files),
                         "main_package_info": main_package_info,
                         "suburb_package_paths": [str(package) for package in suburb_packages],
+                        "suburb_package_infos": [self._inspect_dbpf_package(package) for package in suburb_packages],
                     },
                 )
             )
+            for suburb_package in suburb_packages:
+                package_role_counts.update([str(self._inspect_dbpf_package(suburb_package).get("package_role", "Unknown"))])
+            for lot_package in lot_files:
+                package_role_counts.update([str(self._inspect_dbpf_package(lot_package).get("package_role", "Unknown"))])
 
         neighborhood_manager_path = neighborhoods_root / "NeighborhoodManager.package"
+        neighborhood_manager_info = self._inspect_dbpf_package(neighborhood_manager_path)
+        package_role_counts.update([str(neighborhood_manager_info.get("package_role", "Unknown"))])
         return SaveGame(
             version=f"fs-preview:{neighborhoods_root}",
             households=households,
@@ -189,8 +199,12 @@ class SaveParser:
                 "neighborhood_count": len(households),
                 "neighborhood_manager_exists": neighborhood_manager_path.exists(),
                 "neighborhood_manager_path": str(neighborhood_manager_path),
-                "neighborhood_manager_info": self._inspect_dbpf_package(neighborhood_manager_path),
+                "neighborhood_manager_info": neighborhood_manager_info,
                 "total_story_entries": total_story_entries,
+                "package_role_profile": [
+                    {"role": role, "count": count}
+                    for role, count in package_role_counts.most_common()
+                ],
             },
         )
 
@@ -246,6 +260,7 @@ class SaveParser:
             for resource_type, count in resource_type_counts.most_common(5)
         ]
         domain_profile = self._build_domain_profile(index_entries)
+        package_role = self._classify_package_role(path)
         return {
             "exists": True,
             "path": str(path),
@@ -267,6 +282,7 @@ class SaveParser:
             "parsed_index_entry_count": len(index_entries),
             "top_resource_types": top_resource_types,
             "domain_profile": domain_profile,
+            "package_role": package_role,
         }
 
     def _read_dbpf_index(
@@ -333,3 +349,18 @@ class SaveParser:
             {"domain": domain, "count": count}
             for domain, count in counts.most_common(6)
         ]
+
+    def _classify_package_role(self, path: Path) -> str:
+        name = path.name
+        parent_name = path.parent.name.lower()
+        if name == "NeighborhoodManager.package":
+            return "Neighborhood Manager"
+        if name.endswith("_Neighborhood.package"):
+            return "Neighborhood Main"
+        if "_Suburb" in name:
+            return "Suburb"
+        if parent_name == "characters":
+            return "Character/Sim"
+        if parent_name == "lots":
+            return "Lot"
+        return "Other Package"

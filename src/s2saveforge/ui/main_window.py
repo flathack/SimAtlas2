@@ -732,6 +732,12 @@ class MainWindow(QMainWindow):
                         "",
                     ]
                 )
+                package_role_profile = savegame.metadata.get("package_role_profile", [])
+                if isinstance(package_role_profile, list) and package_role_profile:
+                    lines.extend(["Package role profile"])
+                    for entry in package_role_profile[:6]:
+                        lines.append(f"{entry.get('role', 'Unknown')} x {entry.get('count', 0)}")
+                    lines.append("")
 
         if household is not None:
             scope_label = "Neighborhood" if self._is_preview_mode() else "Household"
@@ -751,6 +757,8 @@ class MainWindow(QMainWindow):
                         f"Directory: {household.metadata.get('directory_path', '-')}",
                         "Main package: "
                         + ("present" if household.metadata.get("main_package_exists", True) else "missing"),
+                        "Main package role: "
+                        + str(household.metadata.get("main_package_info", {}).get("package_role", "-")),
                         "Characters dir: "
                         + ("present" if household.metadata.get("characters_dir_exists", True) else "missing"),
                         "Lots dir: "
@@ -987,6 +995,7 @@ class MainWindow(QMainWindow):
 
         lines.extend(
             [
+                f"Package role: {package_info.get('package_role', 'Unknown')}",
                 f"Size: {package_info.get('size', 0)} bytes",
                 f"Magic: {package_info.get('magic', '-')}",
                 f"DBPF: {package_info.get('is_dbpf', False)}",
@@ -1086,6 +1095,8 @@ class MainWindow(QMainWindow):
 
     def _refresh_resource_browser(self) -> None:
         entries = self._filtered_resource_entries()
+        selected_path = self.package_source_select.currentData()
+        package_info = self._lookup_package_info(str(selected_path)) if isinstance(selected_path, str) else None
         if not entries:
             self.resource_summary_view.setPlainText(
                 "No parsed resource entries available for the current package and filter.\n\n"
@@ -1100,6 +1111,7 @@ class MainWindow(QMainWindow):
             "",
             f"Visible entries: {len(entries)}",
             f"Current filter: {self.resource_type_select.currentText() or 'All resource types'}",
+            f"Package role: {package_info.get('package_role', 'Unknown') if package_info else 'Unknown'}",
             "",
             "This is a preview of parsed DBPF index entries from the selected package.",
         ]

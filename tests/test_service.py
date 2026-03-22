@@ -91,6 +91,7 @@ def test_session_loads_sims2_folder_preview_and_blocks_save(tmp_path: Path) -> N
     assert savegame.households[0].metadata["character_count"] == 2
     assert savegame.households[0].metadata["main_package_info"]["exists"] is True
     assert savegame.households[0].metadata["main_package_info"]["is_dbpf"] is True
+    assert savegame.households[0].metadata["main_package_info"]["package_role"] == "Neighborhood Main"
     assert savegame.households[0].metadata["main_package_info"]["parsed_index_entry_count"] == 2
     assert savegame.households[0].metadata["main_package_info"]["index_entries_preview"][0]["type_name"] != ""
     assert savegame.households[0].metadata["main_package_info"]["index_entries_preview"][0]["domain_hint"] != ""
@@ -98,10 +99,12 @@ def test_session_loads_sims2_folder_preview_and_blocks_save(tmp_path: Path) -> N
     assert len(savegame.sims) == 2
     assert savegame.sims[0].metadata["package_path"].endswith(".package")
     assert savegame.sims[0].metadata["package_info"]["exists"] is True
+    assert savegame.sims[0].metadata["package_info"]["package_role"] == "Character/Sim"
     assert savegame.sims[0].metadata["package_info"]["parsed_index_entry_count"] == 1
     assert savegame.metadata["source_kind"] == "folder_preview"
     assert savegame.metadata["neighborhood_manager_exists"] is False
     assert savegame.metadata["neighborhood_manager_info"]["exists"] is False
+    assert isinstance(savegame.metadata["package_role_profile"], list)
 
     with pytest.raises(ReadOnlySaveFormatError):
         session.create_backup()
