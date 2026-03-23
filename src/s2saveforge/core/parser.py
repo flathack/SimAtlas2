@@ -5,12 +5,207 @@ from pathlib import Path
 import re
 import struct
 from collections import Counter
+from functools import lru_cache
 
 from s2saveforge.core.models import Household, Lot, Neighborhood, SaveGame, Sim
 from s2saveforge.core.simpe_reference import SimPEReferenceCatalog, load_simpe_reference_catalog
 
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".bmp"}
+ASCII_TEXT_PATTERN = re.compile(rb"[A-Za-z][A-Za-z0-9 '&/\\\-_.:()]{2,95}")
+UTF16_TEXT_PATTERN = re.compile(rb"(?:[A-Za-z0-9 '&/\\\-_.:()]\x00){4,96}")
+GENERIC_TEXT_HINT_STOPWORDS = {
+    "attribute",
+    "clockwise",
+    "coeffmultiplier",
+    "controller",
+    "current motiv",
+    "function",
+    "guid",
+    "material",
+    "model bone",
+    "object",
+    "portal",
+    "resource",
+    "semi-global",
+    "slot nam",
+    "social routing",
+    "television",
+    "the sims 2",
+    "xml version",
+}
+LOT_NAME_STOPWORDS = {
+    "controller",
+    "food -",
+    "jobdata",
+    "lighting",
+    "object",
+    "portal",
+    "preview",
+    "television",
+}
+OBJECT_NAME_SKIP_TERMS = {
+    "addlayer",
+    "attribute labels",
+    "basetext",
+    "function -",
+    "model bone names",
+    "objects already looked at",
+    "rel. labels",
+}
+NAME_STOPWORDS = {
+    "behavior",
+    "behaviour",
+    "controller",
+    "function",
+    "labels",
+    "model",
+    "object",
+    "portal",
+    "signature",
+    "social",
+    "witch",
+}
+WANT_KEYWORDS = ("want", "wish", "fear", "wants ", "aspiration")
+CLOTHING_KEYWORDS = (
+    "dress",
+    "shirt",
+    "pants",
+    "skirt",
+    "jacket",
+    "hair",
+    "shoe",
+    "shoes",
+    "outfit",
+    "glasses",
+    "hat",
+    "necklace",
+)
+
+
+def _normalize_text_hint(value: str) -> str:
+    cleaned = value.replace("\x00", " ").replace("_cres", "").replace("_objt", "")
+    cleaned = cleaned.replace("_obj", "").replace("_txm", "").replace("_txtr", "")
+    cleaned = cleaned.replace("_shpe", "").replace("_gmdc", "").replace("_gmd", "")
+    cleaned = cleaned.replace("_cmpm", "").replace("_", " ")
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    cleaned = cleaned.strip(" -:#[]{}()\t\r\n\"")
+    return cleaned.strip()
+
+
+def _looks_like_human_name(value: str) -> bool:
+    words = [word for word in value.split() if word]
+    if not 1 <= len(words) <= 3:
+        return False
+    if any(any(ch.isdigit() for ch in word) for word in words):
+        return False
+    if any(len(word) < 2 for word in words):
+        return False
+    if value.lower() in {"burglar", "dbpf", "family", "familial", "neighborh"}:
+        return False
+    if value.isupper():
+        return False
+    if any(word.casefold() in NAME_STOPWORDS for word in words):
+        return False
+    return all(re.fullmatch(r"[A-Z][a-z]+(?:['-][A-Z]?[a-z]+)?", word) for word in words)
+
+
+def _dedupe_preserve_order(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in items:
+        key = item.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result
+
+
+@lru_cache(maxsize=4096)
+def extract_package_text_hints(path_text: str, package_role: str = "Other Package") -> dict[str, list[str] | str]:
+    path = Path(path_text)
+    if not path.exists() or not path.is_file():
+        return {
+            "sampled": False,
+            "name_candidates": [],
+            "resident_name_candidates": [],
+            "object_name_candidates": [],
+            "want_candidates": [],
+            "clothing_candidates": [],
+            "preview_strings": [],
+        }
+
+    sample = _read_package_text_sample(path)
+    raw_strings = [match.decode("latin1", errors="ignore") for match in ASCII_TEXT_PATTERN.findall(sample)]
+    raw_strings.extend(match.decode("utf-16le", errors="ignore") for match in UTF16_TEXT_PATTERN.findall(sample))
+
+    normalized = []
+    for item in raw_strings:
+        cleaned = _normalize_text_hint(item)
+        if len(cleaned) < 3 or len(cleaned) > 80:
+            continue
+        if not any(ch.isalpha() for ch in cleaned):
+            continue
+        lowered = cleaned.casefold()
+        if any(stopword in lowered for stopword in GENERIC_TEXT_HINT_STOPWORDS):
+            continue
+        normalized.append(cleaned)
+
+    preview_strings = _dedupe_preserve_order(normalized)[:24]
+    name_candidates: list[str] = []
+    resident_name_candidates: list[str] = []
+    object_name_candidates: list[str] = []
+    want_candidates: list[str] = []
+    clothing_candidates: list[str] = []
+
+    for candidate in _dedupe_preserve_order(normalized):
+        lowered = candidate.casefold()
+        if package_role == "Character/Sim":
+            if _looks_like_human_name(candidate):
+                name_candidates.append(candidate)
+            if any(keyword in lowered for keyword in WANT_KEYWORDS):
+                want_candidates.append(candidate)
+            if any(keyword in lowered for keyword in CLOTHING_KEYWORDS):
+                clothing_candidates.append(candidate)
+        elif package_role == "Lot":
+            if _looks_like_human_name(candidate):
+                resident_name_candidates.append(candidate)
+                continue
+            if (
+                4 <= len(candidate) <= 48
+                and (" " in candidate or "-" in candidate)
+                and not any(stopword in lowered for stopword in LOT_NAME_STOPWORDS)
+            ):
+                name_candidates.append(candidate)
+                continue
+            if not any(skip_term in lowered for skip_term in OBJECT_NAME_SKIP_TERMS):
+                object_name_candidates.append(candidate)
+        else:
+            if 4 <= len(candidate) <= 48 and (" " in candidate or "-" in candidate):
+                name_candidates.append(candidate)
+
+    return {
+        "sampled": True,
+        "name_candidates": _dedupe_preserve_order(name_candidates)[:12],
+        "resident_name_candidates": _dedupe_preserve_order(resident_name_candidates)[:24],
+        "object_name_candidates": _dedupe_preserve_order(object_name_candidates)[:120],
+        "want_candidates": _dedupe_preserve_order(want_candidates)[:40],
+        "clothing_candidates": _dedupe_preserve_order(clothing_candidates)[:40],
+        "preview_strings": preview_strings,
+    }
+
+
+def _read_package_text_sample(path: Path, budget_bytes: int = 262_144) -> bytes:
+    file_size = path.stat().st_size
+    if file_size <= budget_bytes * 2:
+        return path.read_bytes()
+
+    with path.open("rb") as handle:
+        head = handle.read(budget_bytes)
+        handle.seek(max(file_size - budget_bytes, 0))
+        tail = handle.read(budget_bytes)
+    return head + b"\n" + tail
 
 
 class UnsupportedSaveFormatError(RuntimeError):
@@ -90,9 +285,9 @@ class SaveParser:
     def __init__(self, simpe_path: str | None = None) -> None:
         self._simpe_reference: SimPEReferenceCatalog | None = load_simpe_reference_catalog(simpe_path)
 
-    def read(self, path: Path) -> SaveGame:
+    def read(self, path: Path, progress_callback=None) -> SaveGame:
         if path.is_dir():
-            return self._read_directory(path)
+            return self._read_directory(path, progress_callback=progress_callback)
 
         suffix = path.suffix.lower()
         if suffix not in self.SUPPORTED_SUFFIXES:
@@ -118,7 +313,7 @@ class SaveParser:
         content = json.dumps(savegame.to_dict(), indent=2, ensure_ascii=True)
         path.write_text(content + "\n", encoding="utf-8")
 
-    def _read_directory(self, path: Path) -> SaveGame:
+    def _read_directory(self, path: Path, progress_callback=None) -> SaveGame:
         neighborhoods_root = self._resolve_neighborhoods_root(path)
         selected_neighborhood = path if path.is_dir() and self.NEIGHBORHOOD_PATTERN.match(path.name) else None
         if selected_neighborhood is not None:
@@ -135,6 +330,9 @@ class SaveParser:
                 "No Sims 2 neighborhood folders were found in the selected directory."
             )
 
+        if progress_callback is not None:
+            progress_callback("Scanning neighborhoods", 0, max(len(neighborhood_dirs), 1))
+
         households: list[Household] = []
         neighborhoods: list[Neighborhood] = []
         lots: list[Lot] = []
@@ -146,7 +344,13 @@ class SaveParser:
         total_neighborhood_file_count = 0
         total_neighborhood_file_size = 0
 
-        for neighborhood_dir in neighborhood_dirs:
+        for neighborhood_index, neighborhood_dir in enumerate(neighborhood_dirs, start=1):
+            if progress_callback is not None:
+                progress_callback(
+                    f"Loading neighborhood {neighborhood_dir.name}",
+                    neighborhood_index - 1,
+                    len(neighborhood_dirs),
+                )
             characters_dir = neighborhood_dir / "Characters"
             lots_dir = neighborhood_dir / "Lots"
             storytelling_dir = neighborhood_dir / "Storytelling"
@@ -204,11 +408,17 @@ class SaveParser:
             for lot_index, lot_package in enumerate(lot_files, start=1):
                 lot_id = lot_package.stem
                 lot_package_info = self._inspect_dbpf_package(lot_package)
+                text_hints = lot_package_info.get("text_hints", {}) if isinstance(lot_package_info, dict) else {}
+                lot_name_candidates = text_hints.get("name_candidates", []) if isinstance(text_hints, dict) else []
                 lot_ids.append(lot_id)
                 lots.append(
                     Lot(
                         id=lot_id,
-                        name=f"{neighborhood_dir.name} Lot {lot_index}",
+                        name=(
+                            str(lot_name_candidates[0])
+                            if isinstance(lot_name_candidates, list) and lot_name_candidates
+                            else f"{neighborhood_dir.name} Lot {lot_index}"
+                        ),
                         neighborhood_id=neighborhood_dir.name,
                         package_path=str(lot_package),
                         occupancy="unknown",
@@ -217,6 +427,7 @@ class SaveParser:
                         metadata={
                             "package_size": lot_package.stat().st_size,
                             "package_info": lot_package_info,
+                            "text_hints": text_hints,
                             "lot_index": lot_index,
                             "neighborhood_id": neighborhood_dir.name,
                         },
@@ -289,9 +500,18 @@ class SaveParser:
             for thumbnail_package_info in thumbnail_package_infos:
                 package_role_counts.update([str(thumbnail_package_info.get("package_role", "Unknown"))])
 
+            if progress_callback is not None:
+                progress_callback(
+                    f"Loaded neighborhood {neighborhood_dir.name}",
+                    neighborhood_index,
+                    len(neighborhood_dirs),
+                )
+
         neighborhood_manager_path = neighborhoods_root / "NeighborhoodManager.package"
         neighborhood_manager_info = self._inspect_dbpf_package(neighborhood_manager_path)
         package_role_counts.update([str(neighborhood_manager_info.get("package_role", "Unknown"))])
+        if progress_callback is not None:
+            progress_callback("Finalizing save overview", len(neighborhood_dirs), len(neighborhood_dirs))
         return SaveGame(
             version=f"fs-preview:{neighborhoods_root}",
             households=households,
@@ -464,6 +684,9 @@ class SaveParser:
         ]
         domain_profile = self._build_domain_profile(index_entries)
         package_role = self._classify_package_role(path)
+        text_hints: dict[str, list[str] | str] = {}
+        if package_role in {"Lot", "Neighborhood Main", "Neighborhood Manager"}:
+            text_hints = extract_package_text_hints(str(path), package_role)
         return {
             "exists": True,
             "path": str(path),
@@ -486,6 +709,7 @@ class SaveParser:
             "top_resource_types": top_resource_types,
             "domain_profile": domain_profile,
             "package_role": package_role,
+            "text_hints": text_hints,
         }
 
     def _read_dbpf_index(

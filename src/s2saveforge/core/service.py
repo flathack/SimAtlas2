@@ -30,8 +30,12 @@ class SaveSession:
     def history_labels(self) -> list[str]:
         return [label for label, _state in self._history]
 
-    def load(self, path: Path) -> SaveGame:
-        savegame = self._parser.read(path)
+    def load(
+        self,
+        path: Path,
+        progress_callback: Callable[[str, int, int], None] | None = None,
+    ) -> SaveGame:
+        savegame = self._parser.read(path, progress_callback=progress_callback)
         self._source_path = path
         self._current = savegame
         self._history = [("Loaded save", savegame.clone())]

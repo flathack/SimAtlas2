@@ -155,6 +155,29 @@ def test_session_loads_sims2_folder_preview_and_blocks_save(tmp_path: Path) -> N
         session.save()
 
 
+def test_session_reports_progress_for_folder_preview_load(tmp_path: Path) -> None:
+    root = tmp_path / "The Sims 2"
+    neighborhoods = root / "Neighborhoods"
+    for neighborhood_id in ("N001", "N002"):
+        neighborhood = neighborhoods / neighborhood_id
+        characters = neighborhood / "Characters"
+        lots = neighborhood / "Lots"
+        characters.mkdir(parents=True)
+        lots.mkdir(parents=True)
+        _write_fake_dbpf(neighborhood / f"{neighborhood_id}_Neighborhood.package", entry_count=1)
+        _write_fake_dbpf(characters / f"{neighborhood_id}_User00000.package", entry_count=1)
+        _write_fake_dbpf(lots / f"{neighborhood_id}_Lot1.package", entry_count=1)
+
+    session = SaveSession()
+    progress_events: list[tuple[str, int, int]] = []
+    session.load(root, progress_callback=lambda message, current, total: progress_events.append((message, current, total)))
+
+    assert progress_events
+    assert any("Loading neighborhood N001" in message for message, _current, _total in progress_events)
+    assert any("Loaded neighborhood N002" in message for message, _current, _total in progress_events)
+    assert progress_events[-1][0] == "Finalizing save overview"
+
+
 def _write_fake_dbpf(path: Path, entry_count: int) -> None:
     index_offset = 96
     entry_size = 20
