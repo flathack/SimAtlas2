@@ -104,11 +104,87 @@ class Relationship:
 
 
 @dataclass(slots=True)
+class Lot:
+    id: str
+    name: str
+    neighborhood_id: str
+    package_path: str = ""
+    occupancy: str = "unknown"
+    zone_type: str = "unknown"
+    household_id: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    @staticmethod
+    def from_dict(data: dict[str, Any]) -> "Lot":
+        return Lot(
+            id=str(data.get("id", "")),
+            name=str(data.get("name", "Unknown Lot")),
+            neighborhood_id=str(data.get("neighborhood_id", "")),
+            package_path=str(data.get("package_path", "")),
+            occupancy=str(data.get("occupancy", "unknown")),
+            zone_type=str(data.get("zone_type", "unknown")),
+            household_id=str(data.get("household_id", "")),
+            metadata=dict(data.get("metadata", {})),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "neighborhood_id": self.neighborhood_id,
+            "package_path": self.package_path,
+            "occupancy": self.occupancy,
+            "zone_type": self.zone_type,
+            "household_id": self.household_id,
+            "metadata": dict(self.metadata),
+        }
+
+
+@dataclass(slots=True)
+class Neighborhood:
+    id: str
+    name: str
+    directory_path: str = ""
+    main_package_path: str = ""
+    household_ids: list[str] = field(default_factory=list)
+    lot_ids: list[str] = field(default_factory=list)
+    sim_ids: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    @staticmethod
+    def from_dict(data: dict[str, Any]) -> "Neighborhood":
+        return Neighborhood(
+            id=str(data.get("id", "")),
+            name=str(data.get("name", "Unknown Neighborhood")),
+            directory_path=str(data.get("directory_path", "")),
+            main_package_path=str(data.get("main_package_path", "")),
+            household_ids=[str(item) for item in data.get("household_ids", [])],
+            lot_ids=[str(item) for item in data.get("lot_ids", [])],
+            sim_ids=[str(item) for item in data.get("sim_ids", [])],
+            metadata=dict(data.get("metadata", {})),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "directory_path": self.directory_path,
+            "main_package_path": self.main_package_path,
+            "household_ids": list(self.household_ids),
+            "lot_ids": list(self.lot_ids),
+            "sim_ids": list(self.sim_ids),
+            "metadata": dict(self.metadata),
+        }
+
+
+@dataclass(slots=True)
 class SaveGame:
     version: str = "0.1"
     sims: list[Sim] = field(default_factory=list)
     households: list[Household] = field(default_factory=list)
     relationships: list[Relationship] = field(default_factory=list)
+    lots: list[Lot] = field(default_factory=list)
+    neighborhoods: list[Neighborhood] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @staticmethod
@@ -118,6 +194,8 @@ class SaveGame:
             sims=[Sim.from_dict(item) for item in data.get("sims", [])],
             households=[Household.from_dict(item) for item in data.get("households", [])],
             relationships=[Relationship.from_dict(item) for item in data.get("relationships", [])],
+            lots=[Lot.from_dict(item) for item in data.get("lots", [])],
+            neighborhoods=[Neighborhood.from_dict(item) for item in data.get("neighborhoods", [])],
             metadata=dict(data.get("metadata", {})),
         )
 
@@ -127,6 +205,8 @@ class SaveGame:
             "households": [household.to_dict() for household in self.households],
             "sims": [sim.to_dict() for sim in self.sims],
             "relationships": [rel.to_dict() for rel in self.relationships],
+            "lots": [lot.to_dict() for lot in self.lots],
+            "neighborhoods": [neighborhood.to_dict() for neighborhood in self.neighborhoods],
             "metadata": dict(self.metadata),
         }
 

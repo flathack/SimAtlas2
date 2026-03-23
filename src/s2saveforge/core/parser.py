@@ -6,7 +6,7 @@ import re
 import struct
 from collections import Counter
 
-from s2saveforge.core.models import Household, SaveGame, Sim
+from s2saveforge.core.models import Household, Lot, Neighborhood, SaveGame, Sim
 from s2saveforge.core.simpe_reference import SimPEReferenceCatalog, load_simpe_reference_catalog
 
 
@@ -136,6 +136,8 @@ class SaveParser:
             )
 
         households: list[Household] = []
+        neighborhoods: list[Neighborhood] = []
+        lots: list[Lot] = []
         sims: list[Sim] = []
         total_story_entries = 0
         package_role_counts: Counter[str] = Counter()
@@ -173,6 +175,7 @@ class SaveParser:
             package_role_counts.update([str(main_package_info.get("package_role", "Unknown"))])
 
             members: list[str] = []
+            lot_ids: list[str] = []
             for package_path in character_files:
                 sim_id = package_path.stem
                 members.append(sim_id)
@@ -197,6 +200,29 @@ class SaveParser:
                         },
                     )
                 )
+
+            for lot_index, lot_package in enumerate(lot_files, start=1):
+                lot_id = lot_package.stem
+                lot_package_info = self._inspect_dbpf_package(lot_package)
+                lot_ids.append(lot_id)
+                lots.append(
+                    Lot(
+                        id=lot_id,
+                        name=f"{neighborhood_dir.name} Lot {lot_index}",
+                        neighborhood_id=neighborhood_dir.name,
+                        package_path=str(lot_package),
+                        occupancy="unknown",
+                        zone_type="unknown",
+                        household_id="",
+                        metadata={
+                            "package_size": lot_package.stat().st_size,
+                            "package_info": lot_package_info,
+                            "lot_index": lot_index,
+                            "neighborhood_id": neighborhood_dir.name,
+                        },
+                    )
+                )
+                package_role_counts.update([str(lot_package_info.get("package_role", "Unknown"))])
 
             households.append(
                 Household(
@@ -224,6 +250,8 @@ class SaveParser:
                         "top_level_package_count": package_count,
                         "character_package_total_size": sum(path.stat().st_size for path in character_files),
                         "lot_package_total_size": sum(path.stat().st_size for path in lot_files),
+                        "lot_ids": lot_ids,
+                        "neighborhood_id": neighborhood_dir.name,
                         "main_package_info": main_package_info,
                         "suburb_package_paths": [str(package) for package in suburb_packages],
                         "suburb_package_infos": suburb_package_infos,
@@ -233,12 +261,33 @@ class SaveParser:
                     },
                 )
             )
+            neighborhoods.append(
+                Neighborhood(
+                    id=neighborhood_dir.name,
+                    name=neighborhood_dir.name,
+                    directory_path=str(neighborhood_dir),
+                    main_package_path=str(main_package_path),
+                    household_ids=[neighborhood_dir.name],
+                    lot_ids=lot_ids,
+                    sim_ids=members,
+                    metadata={
+                        "main_package_exists": main_package_path.exists(),
+                        "character_count": len(character_files),
+                        "lot_count": lot_count,
+                        "suburb_count": len(suburb_packages),
+                        "story_entry_count": len(story_entries),
+                        "thumbnail_package_count": len(thumbnail_packages),
+                        "main_package_info": main_package_info,
+                        "suburb_package_infos": suburb_package_infos,
+                        "thumbnail_package_infos": thumbnail_package_infos,
+                        "file_inventory": file_inventory,
+                    },
+                )
+            )
             for suburb_package_info in suburb_package_infos:
                 package_role_counts.update([str(suburb_package_info.get("package_role", "Unknown"))])
             for thumbnail_package_info in thumbnail_package_infos:
                 package_role_counts.update([str(thumbnail_package_info.get("package_role", "Unknown"))])
-            for lot_package in lot_files:
-                package_role_counts.update([str(self._inspect_dbpf_package(lot_package).get("package_role", "Unknown"))])
 
         neighborhood_manager_path = neighborhoods_root / "NeighborhoodManager.package"
         neighborhood_manager_info = self._inspect_dbpf_package(neighborhood_manager_path)
@@ -248,10 +297,13 @@ class SaveParser:
             households=households,
             sims=sims,
             relationships=[],
+            lots=lots,
+            neighborhoods=neighborhoods,
             metadata={
                 "source_kind": "folder_preview",
                 "neighborhoods_root": str(neighborhoods_root),
                 "neighborhood_count": len(households),
+                "lot_count": len(lots),
                 "neighborhood_manager_exists": neighborhood_manager_path.exists(),
                 "neighborhood_manager_path": str(neighborhood_manager_path),
                 "neighborhood_manager_info": neighborhood_manager_info,

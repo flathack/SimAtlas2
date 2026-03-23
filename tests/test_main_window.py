@@ -89,5 +89,7 @@ def test_selecting_neighborhood_updates_scope_without_crash(tmp_path: Path) -> N
     assert window._current_household_filter_id == "N002"
     assert window.household_select.currentData() == "N002"
     assert window.sim_list.count() == 1
+    assert "Neighborhoods: 2" in window.counts_label.text()
+    assert "Lots: 2" in window.counts_label.text()
 
     window.close()

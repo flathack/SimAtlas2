@@ -775,8 +775,8 @@ class MainWindow(QMainWindow):
 
         self.source_label.setText(f"Source: {source}")
         self.counts_label.setText(
-            "Households: "
-            f"{len(savegame.households)} | Sims: {len(savegame.sims)} | Relationships: {len(savegame.relationships)}"
+            "Neighborhoods: "
+            f"{len(savegame.neighborhoods)} | Lots: {len(savegame.lots)} | Households: {len(savegame.households)} | Sims: {len(savegame.sims)} | Relationships: {len(savegame.relationships)}"
         )
         summary = summarize_issues(self.session.validate())
         self.health_label.setText(
@@ -861,6 +861,8 @@ class MainWindow(QMainWindow):
             "",
             f"Mode: {mode_line}",
             f"Source: {self.session.source_path or '-'}",
+            f"Neighborhoods: {len(savegame.neighborhoods)}",
+            f"Lots: {len(savegame.lots)}",
             f"Households: {len(savegame.households)}",
             f"Sims: {len(savegame.sims)}",
             f"Relationships: {len(savegame.relationships)}",
@@ -875,6 +877,7 @@ class MainWindow(QMainWindow):
                         "Folder Preview",
                         f"Neighborhood root: {savegame.metadata.get('neighborhoods_root', '-')}",
                         f"Neighborhood count: {savegame.metadata.get('neighborhood_count', 0)}",
+                        f"Lot count: {savegame.metadata.get('lot_count', 0)}",
                         "NeighborhoodManager.package: "
                         + ("present" if savegame.metadata.get("neighborhood_manager_exists") else "missing"),
                         f"Story entries found: {savegame.metadata.get('total_story_entries', 0)}",
@@ -980,6 +983,8 @@ class MainWindow(QMainWindow):
         if savegame is not None:
             for household in savegame.households:
                 self.issue_scope_select.addItem(f"{household.id} issues", household.id)
+            for lot in savegame.lots:
+                self.issue_scope_select.addItem(f"{lot.id} issues", lot.id)
 
         for index in range(self.issue_scope_select.count()):
             if self.issue_scope_select.itemData(index) == current_value:

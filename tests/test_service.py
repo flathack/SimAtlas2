@@ -94,8 +94,17 @@ def test_session_loads_sims2_folder_preview_and_blocks_save(tmp_path: Path) -> N
 
     assert savegame.version.startswith("fs-preview:")
     assert len(savegame.households) == 1
+    assert len(savegame.neighborhoods) == 1
+    assert len(savegame.lots) == 1
     assert savegame.households[0].id == "N001"
     assert savegame.households[0].members == ["N001_User00000", "N001_User00001"]
+    assert savegame.households[0].metadata["lot_ids"] == ["N001_Lot1"]
+    assert savegame.neighborhoods[0].id == "N001"
+    assert savegame.neighborhoods[0].lot_ids == ["N001_Lot1"]
+    assert savegame.neighborhoods[0].sim_ids == ["N001_User00000", "N001_User00001"]
+    assert savegame.lots[0].id == "N001_Lot1"
+    assert savegame.lots[0].neighborhood_id == "N001"
+    assert savegame.lots[0].metadata["package_info"]["package_role"] == "Lot"
     assert savegame.households[0].metadata["main_package_exists"] is True
     assert savegame.households[0].metadata["lot_count"] == 1
     assert savegame.households[0].metadata["character_count"] == 2
@@ -134,6 +143,7 @@ def test_session_loads_sims2_folder_preview_and_blocks_save(tmp_path: Path) -> N
     assert savegame.sims[0].metadata["package_info"]["package_role"] == "Character/Sim"
     assert savegame.sims[0].metadata["package_info"]["parsed_index_entry_count"] == 1
     assert savegame.metadata["source_kind"] == "folder_preview"
+    assert savegame.metadata["lot_count"] == 1
     assert savegame.metadata["neighborhood_manager_exists"] is False
     assert savegame.metadata["neighborhood_manager_info"]["exists"] is False
     assert isinstance(savegame.metadata["package_role_profile"], list)

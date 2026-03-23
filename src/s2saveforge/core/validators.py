@@ -48,6 +48,8 @@ def validate_savegame(savegame: SaveGame) -> list[ValidationIssue]:
 
     sim_ids = {sim.id for sim in savegame.sims}
     household_ids = {household.id for household in savegame.households}
+    lot_ids = {lot.id for lot in savegame.lots}
+    neighborhood_ids = {neighborhood.id for neighborhood in savegame.neighborhoods}
 
     if len(sim_ids) != len(savegame.sims):
         issues.append(
@@ -66,6 +68,79 @@ def validate_savegame(savegame: SaveGame) -> list[ValidationIssue]:
                 message="At least one Household ID is duplicated.",
             )
         )
+
+    if len(lot_ids) != len(savegame.lots):
+        issues.append(
+            ValidationIssue(
+                severity="error",
+                code="LOT_DUPLICATE_ID",
+                message="At least one Lot ID is duplicated.",
+            )
+        )
+
+    if len(neighborhood_ids) != len(savegame.neighborhoods):
+        issues.append(
+            ValidationIssue(
+                severity="error",
+                code="NEIGHBORHOOD_DUPLICATE_ID",
+                message="At least one Neighborhood ID is duplicated.",
+            )
+        )
+
+    for neighborhood in savegame.neighborhoods:
+        if metadata.get("source_kind") == "folder_preview" and not neighborhood.metadata.get(
+            "main_package_exists", False
+        ):
+            issues.append(
+                ValidationIssue(
+                    severity="error",
+                    code="NEIGHBORHOOD_MISSING_MAIN_PACKAGE",
+                    message="Neighborhood main package is missing.",
+                    entity_id=neighborhood.id,
+                )
+            )
+
+        for household_id in neighborhood.household_ids:
+            if household_id not in household_ids:
+                issues.append(
+                    ValidationIssue(
+                        severity="error",
+                        code="NEIGHBORHOOD_UNKNOWN_HOUSEHOLD",
+                        message=f"Neighborhood references unknown household '{household_id}'.",
+                        entity_id=neighborhood.id,
+                    )
+                )
+
+        for lot_id in neighborhood.lot_ids:
+            if lot_id not in lot_ids:
+                issues.append(
+                    ValidationIssue(
+                        severity="error",
+                        code="NEIGHBORHOOD_UNKNOWN_LOT",
+                        message=f"Neighborhood references unknown lot '{lot_id}'.",
+                        entity_id=neighborhood.id,
+                    )
+                )
+
+        for sim_id in neighborhood.sim_ids:
+            if sim_id not in sim_ids:
+                issues.append(
+                    ValidationIssue(
+                        severity="error",
+                        code="NEIGHBORHOOD_UNKNOWN_SIM",
+                        message=f"Neighborhood references unknown Sim '{sim_id}'.",
+                        entity_id=neighborhood.id,
+                    )
+                )
+            elif any(sim.id == sim_id and sim.metadata.get("neighborhood_id") != neighborhood.id for sim in savegame.sims):
+                issues.append(
+                    ValidationIssue(
+                        severity="warning",
+                        code="NEIGHBORHOOD_SIM_MISMATCH",
+                        message=f"Neighborhood contains Sim '{sim_id}' with mismatching neighborhood metadata.",
+                        entity_id=neighborhood.id,
+                    )
+                )
 
     for sim in savegame.sims:
         if sim.household_id and sim.household_id not in household_ids:
@@ -112,6 +187,7 @@ def validate_savegame(savegame: SaveGame) -> list[ValidationIssue]:
 
     for household in savegame.households:
         household_meta = household.metadata
+        neighborhood_id = household_meta.get("neighborhood_id", "")
         if household_meta.get("kind") == "neighborhood_preview":
             if not household_meta.get("main_package_exists", False):
                 issues.append(
@@ -159,6 +235,16 @@ def validate_savegame(savegame: SaveGame) -> list[ValidationIssue]:
                     )
                 )
 
+        if neighborhood_id and neighborhood_ids and neighborhood_id not in neighborhood_ids:
+            issues.append(
+                ValidationIssue(
+                    severity="error",
+                    code="HOUSEHOLD_UNKNOWN_NEIGHBORHOOD",
+                    message=f"Household references unknown neighborhood '{neighborhood_id}'.",
+                    entity_id=household.id,
+                )
+            )
+
         if household.funds < 0:
             issues.append(
                 ValidationIssue(
@@ -179,6 +265,27 @@ def validate_savegame(savegame: SaveGame) -> list[ValidationIssue]:
                         entity_id=household.id,
                     )
                 )
+
+    for lot in savegame.lots:
+        if lot.neighborhood_id and neighborhood_ids and lot.neighborhood_id not in neighborhood_ids:
+            issues.append(
+                ValidationIssue(
+                    severity="error",
+                    code="LOT_UNKNOWN_NEIGHBORHOOD",
+                    message=f"Lot references unknown neighborhood '{lot.neighborhood_id}'.",
+                    entity_id=lot.id,
+                )
+            )
+
+        if lot.household_id and lot.household_id not in household_ids:
+            issues.append(
+                ValidationIssue(
+                    severity="warning",
+                    code="LOT_UNKNOWN_HOUSEHOLD",
+                    message=f"Lot references unknown household '{lot.household_id}'.",
+                    entity_id=lot.id,
+                )
+            )
 
     for rel in savegame.relationships:
         if rel.sim_a not in sim_ids or rel.sim_b not in sim_ids:
